@@ -1,0 +1,92 @@
+===========================================================================
+PROYECTO: BOT DE TELEGRAM Y PANEL WEB - CALIDAD Y CAUSA RAIZ (PUERTO 8505)
+===========================================================================
+
+1. DATOS DEL SERVIDOR Y SERVICIO
+---------------------------------------------------------------------------
+- IP Servidor:    10.108.34.74
+- Puerto SSH:     822
+- Usuario:        root
+- Contraseña:     Claro2026
+- Puerto Web:     8505
+- Bot Telegram:   @causaraiz_bot
+- Token Bot:      8978005290:AAHkQcCm8dnIrHJ9lnNFNAUZElVZ6OghN9k
+
+2. FLUJO DEL BOT EN TELEGRAM (@causaraiz_bot)
+---------------------------------------------------------------------------
+1. Saludo inicial: El supervisor escribe cualquier saludo o /start.
+2. Pregunta Región: El bot consulta el campo `Region` de la base y muestra
+   los botones interactivos (ej: R1, R2, R3, R4, R5).
+3. Pregunta Red: Dependiendo de la Región elegida, muestra las redes
+   disponibles (FTT, HFC, Red Neutra, DTH).
+4. Pregunta Ciudad: Muestra las ciudades (`Comunidad`) con OTs en la base,
+   con paginación interactiva (◀️ Anterior / Siguiente ▶️).
+5. Pregunta Rango: Muestra los rangos disponibles del campo `RangoPrimerArreglo`.
+6. Lista Llamadas de Servicio: Lista las llamadas en orden DESCENDENTE
+   del campo `PrimeraLLS`.
+7. Ficha de Detalle: Al presionar una llamada, muestra:
+   - Cuenta
+   - Aliado
+   - Segmento
+   - Red
+   - Comunidad
+   - (y botón: [🔍 Realizar Causa Raiz])
+8. Selección de Causa: Lista las causas de la `Matriz_Causas_Subcausas.xlsx`.
+9. Selección de Subcausa: Habilita únicamente las subcausas correspondientes.
+10. Confirmación y Guardado: Guarda la respuesta en la tabla MySQL
+    `hallazgos_respuestas` con timestamp, supervisor, OT, cuenta, etc.
+
+3. TABLAS EN MYSQL (Base de datos: calidad_visitas)
+---------------------------------------------------------------------------
+- `cargues_control`:
+    Lleva el registro de cada lote cargado, fecha y hora exacta (timestamp),
+    nombre del archivo y cantidad de registros.
+- `visitas_calidad`:
+    Almacena las visitas cargadas desde `Visitas_Calidad.xlsx` asociadas
+    a su `cargue_id` y timestamp.
+- `matriz_causas_subcausas`:
+    Almacena las 73 combinaciones de Causa y Subcausa.
+- `hallazgos_respuestas`:
+    Almacena las respuestas capturadas por supervisores en Telegram.
+
+4. PANEL WEB ADMINISTRATIVO (http://10.108.34.74:8505/)
+---------------------------------------------------------------------------
+- Dashboard con estadísticas en tiempo real (Total visitas, Total hallazgos).
+- Formulario para cargar diariamente el nuevo Excel `Visitas_Calidad.xlsx`.
+- Botón para descargar el reporte consolidado de hallazgos en formato Excel.
+- Visor web de los últimos hallazgos registrados.
+
+5. INSTALACIÓN / DESPLIEGUE EN EL SERVIDOR
+---------------------------------------------------------------------------
+OPCIÓN A (Automática por script en Python):
+  1. Conéctate a la red corporativa Claro o a FortiClient VPN (CLARO IT 2FA).
+  2. Ejecuta desde esta carpeta:
+       python desplegar_remoto.py
+  El script se conectará por SSH (puerto 822), subirá los archivos y ejecutará
+  el instalador automáticamente.
+
+OPCIÓN B (Manual vía WinSCP / Putty):
+  1. Conéctate por WinSCP a:
+       Host: 10.108.34.74   Puerto: 822
+       Usuario: root        Clave: Claro2026
+  2. Sube la carpeta del proyecto a: /root/bot_calidad/
+  3. En Putty / SSH ejecuta:
+       cd /root/bot_calidad
+       chmod +x instalar_servidor.sh
+       ./instalar_servidor.sh
+
+6. COMANDOS ÚTILES EN EL SERVIDOR LINUX
+---------------------------------------------------------------------------
+- Ver estado del bot y panel web:
+    systemctl status bot-calidad
+
+- Reiniciar el bot y panel web:
+    systemctl restart bot-calidad
+
+- Ver logs en vivo del bot:
+    journalctl -u bot-calidad -f
+
+- Cargar base manualmente por consola:
+    cd /opt/bot_calidad
+    ./venv/bin/python3 cargar_base.py Visitas_Calidad.xlsx
+===========================================================================
