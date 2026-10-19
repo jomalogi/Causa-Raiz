@@ -41,6 +41,7 @@ def get_session(chat_id):
             'manual_ot': None,
             'manual_cuenta': None,
             'manual_segmento': None,
+            'manual_proveedor_red': None,
             'is_manual': False,
             'page_ali': 0,
             'page_com': 0,
@@ -74,6 +75,7 @@ def reset_session(chat_id):
         'manual_ot': None,
         'manual_cuenta': None,
         'manual_segmento': None,
+        'manual_proveedor_red': None,
         'is_manual': False,
         'page_ali': 0,
         'page_com': 0,
@@ -503,7 +505,7 @@ def view_ingreso_manual_cuenta(chat_id):
     markup = {"inline_keyboard": [[{"text": "⬅️ Cancelar", "callback_data": "nav:cancel_manual"}]]}
     send_message(chat_id, texto, markup)
 
-def view_ingreso_manual_segmento(chat_id):
+def view_ingreso_manual_segmento(chat_id, message_id=None):
     """Paso Manual 3: Seleccionar Segmento (Masivo o Corporativo)."""
     session = get_session(chat_id)
     session['step'] = 'MANUAL_SEGMENTO'
@@ -529,10 +531,46 @@ def view_ingreso_manual_segmento(chat_id):
         [{"text": "⬅️ Cancelar", "callback_data": "nav:cancel_manual"}]
     ]
     markup = {"inline_keyboard": keyboard}
-    send_message(chat_id, texto, markup)
+    if message_id:
+        edit_message(chat_id, message_id, texto, markup)
+    else:
+        send_message(chat_id, texto, markup)
+
+def view_ingreso_manual_proveedor(chat_id, message_id=None):
+    """Paso Manual 4: Seleccionar Proveedor de Red (Claro, OnNet, Atp)."""
+    session = get_session(chat_id)
+    session['step'] = 'MANUAL_PROVEEDOR'
+    prov_actual = session.get('manual_proveedor_red')
+
+    texto = (
+        "📡 *SELECCIÓN DE PROVEEDOR DE RED*\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🛠️ *OT:* `{session['manual_ot']}`\n"
+        f"👤 *Cuenta:* `{session['manual_cuenta']}`\n"
+        f"🏢 *Segmento:* {session.get('manual_segmento', 'Masivo')}\n"
+        f"🏙️ *Ciudad:* {session.get('comunidad')}\n"
+        f"🤝 *Aliado:* {session.get('aliado')}\n"
+        f"🌐 *Red:* {session.get('red')} | 🗺️ *Región:* {session.get('region')}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "Selecciona el *Proveedor de Red* correspondiente a esta orden:"
+    )
+    keyboard = [
+        [
+            {"text": "🔴 Claro" + (" ✅" if prov_actual == "Claro" else ""), "callback_data": "man_prov:Claro"},
+            {"text": "🔵 OnNet" + (" ✅" if prov_actual == "OnNet" else ""), "callback_data": "man_prov:OnNet"},
+            {"text": "🟡 Atp" + (" ✅" if prov_actual == "Atp" else ""), "callback_data": "man_prov:Atp"}
+        ],
+        [{"text": "⬅️ Cambiar Segmento", "callback_data": "nav:back_man_seg"}],
+        [{"text": "❌ Cancelar", "callback_data": "nav:cancel_manual"}]
+    ]
+    markup = {"inline_keyboard": keyboard}
+    if message_id:
+        edit_message(chat_id, message_id, texto, markup)
+    else:
+        send_message(chat_id, texto, markup)
 
 def view_detalle_manual(chat_id, message_id=None):
-    """Paso Manual 4: Resumen y botón para pasar a Realizar Causa Raíz."""
+    """Paso Manual 5: Resumen y botón para pasar a Realizar Causa Raíz."""
     session = get_session(chat_id)
     visita = session.get('visita', {})
     session['step'] = 'VIEW_DETAIL_MANUAL'
@@ -543,6 +581,7 @@ def view_detalle_manual(chat_id, message_id=None):
         f"🛠️ *OT:* `{visita.get('ot')}`\n"
         f"👤 *Cuenta:* `{visita.get('cuenta')}`\n"
         f"🏢 *Segmento:* {visita.get('segmento')}\n"
+        f"📡 *Proveedor Red:* *{visita.get('proveedor_red')}*\n"
         f"🤝 *Aliado:* {visita.get('aliado')}\n"
         f"🌐 *Red:* {visita.get('red')}\n"
         f"📍 *Ciudad:* {visita.get('comunidad')}\n"
@@ -554,6 +593,7 @@ def view_detalle_manual(chat_id, message_id=None):
 
     keyboard = [
         [{"text": "🔍 Realizar Causa Raiz", "callback_data": "action:causa_raiz"}],
+        [{"text": "📡 Cambiar Proveedor Red", "callback_data": "nav:back_man_prov"}],
         [{"text": "✍️ Cambiar Datos", "callback_data": "man:start"}],
         [{"text": "⬅️ Cancelar", "callback_data": "nav:cancel_manual"}]
     ]
@@ -604,6 +644,7 @@ def view_detalle_llamada(chat_id, primera_lls, message_id=None):
         f"🤝 *Aliado:* {visita.get('aliado')}\n"
         f"🏢 *Segmento:* {visita.get('segmento')}\n"
         f"🌐 *Red:* {visita.get('red')}\n"
+        f"📡 *Proveedor Red:* {visita.get('proveedor_red', 'N/D')}\n"
         f"📍 *Comunidad:* {visita.get('comunidad')}\n"
         f"⏱️ *Rango Primer Arreglo:* {visita.get('rango_primer_arreglo')}\n"
         f"📋 *Trabajo:* {visita.get('trabajo', 'N/A')}\n"
@@ -730,6 +771,7 @@ def view_guardar_resultado(chat_id, subcausa_idx, user_info, message_id=None):
         f"🛠️ *OT:* `{visita.get('ot')}`\n"
         f"👤 *Cuenta:* `{visita.get('cuenta')}`\n"
         f"🏢 *Segmento:* {visita.get('segmento')}\n"
+        f"📡 *Proveedor Red:* {datos_hallazgo.get('proveedor_red', 'N/D')}\n"
         f"🤝 *Aliado:* {visita.get('aliado')}\n"
         f"📍 *Ciudad:* {visita.get('comunidad')} ({visita.get('red')})\n"
         f"🗺️ *Región:* {region_val}\n"
@@ -786,6 +828,7 @@ def handle_callback(update):
         session['manual_ot'] = None
         session['manual_cuenta'] = None
         session['manual_segmento'] = None
+        session['manual_proveedor_red'] = None
         view_seleccionar_rango(chat_id, message_id)
         return
 
@@ -800,12 +843,25 @@ def handle_callback(update):
     if data.startswith("man_seg:"):
         segmento = data.split(":", 1)[1]
         session['manual_segmento'] = segmento
+        view_ingreso_manual_proveedor(chat_id, message_id)
+        return
+
+    if data.startswith("man_prov:"):
+        prov = data.split(":", 1)[1]
+        if prov.upper() == "ONNET":
+            prov = "OnNet"
+        elif prov.upper() == "ATP":
+            prov = "Atp"
+        else:
+            prov = "Claro"
+        session['manual_proveedor_red'] = prov
         session['visita'] = {
             'ot': session['manual_ot'],
             'cuenta': session['manual_cuenta'],
             'aliado': session.get('aliado', 'Sin Aliado'),
-            'segmento': segmento,
+            'segmento': session.get('manual_segmento', 'Masivo'),
             'red': session.get('red', 'Sin Red'),
+            'proveedor_red': prov,
             'region': session.get('region', 'Sin Región'),
             'comunidad': session.get('comunidad', 'Sin Ciudad'),
             'primera_lls': session['manual_ot'],
@@ -816,6 +872,14 @@ def handle_callback(update):
         }
         session['primera_lls'] = session['manual_ot']
         view_detalle_manual(chat_id, message_id)
+        return
+
+    if data == "nav:back_man_seg":
+        view_ingreso_manual_segmento(chat_id, message_id)
+        return
+
+    if data == "nav:back_man_prov":
+        view_ingreso_manual_proveedor(chat_id, message_id)
         return
 
     if data == "nav:back_red":
