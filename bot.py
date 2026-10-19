@@ -712,6 +712,7 @@ def view_guardar_resultado(chat_id, subcausa_idx, user_info, message_id=None):
         'region': region_val,
         'segmento': visita.get('segmento'),
         'red': visita.get('red'),
+        'proveedor_red': visita.get('proveedor_red') or session.get('proveedor_red'),
         'comunidad': visita.get('comunidad'),
         'primera_lls': visita.get('primera_lls'),
         'rango_primer_arreglo': visita.get('rango_primer_arreglo', 'Manual / Fuera de Base'),

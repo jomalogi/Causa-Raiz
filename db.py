@@ -634,6 +634,32 @@ def is_ot_diligenciada(ot, primera_lls=None):
     finally:
         conn.close()
 
+def get_proveedor_red_neutra_ciudad(comunidad):
+    """Retorna el proveedor dominante de Red Neutra para una comunidad (OnNet o Atp)."""
+    if not comunidad:
+        return 'OnNet'
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        placeholder = "%s" if engine == "mysql" else "?"
+        sql = f"""
+            SELECT proveedor_red, COUNT(*) as cnt
+            FROM visitas_calidad
+            WHERE red = 'Red Neutra' AND comunidad = {placeholder} AND proveedor_red IN ('OnNet', 'Atp')
+            GROUP BY proveedor_red
+            ORDER BY cnt DESC LIMIT 1
+        """
+        cur.execute(sql, (comunidad,))
+        row = cur.fetchone()
+        if row:
+            return row['proveedor_red'] if engine == "mysql" else row[0]
+        atp_cities = ['Armenia', 'Bogota, D.C.', 'Cali', 'Envigado', 'Facatativa', 'Funza', 'Itagui', 'La Estrella', 'Madrid', 'Medellin', 'Mosquera', 'Palmira', 'Sabaneta']
+        return 'Atp' if comunidad in atp_cities else 'OnNet'
+    except Exception:
+        return 'OnNet'
+    finally:
+        conn.close()
+
 def get_detalle_visita(primera_lls, cargue_id=None):
     """Obtiene los campos informativos de una llamada específica."""
     if not cargue_id:
@@ -645,7 +671,7 @@ def get_detalle_visita(primera_lls, cargue_id=None):
         placeholder = "%s" if engine == "mysql" else "?"
         extra_cargue = f"AND cargue_id = {placeholder}" if cargue_id else ""
         sql = f"""
-            SELECT ot, cuenta, aliado, segmento, red, comunidad, primera_lls, rango_primer_arreglo, estado, trabajo, fecha_trabajo_ini
+            SELECT ot, cuenta, aliado, segmento, red, proveedor_red, comunidad, primera_lls, rango_primer_arreglo, estado, trabajo, fecha_trabajo_ini
             FROM visitas_calidad 
             WHERE primera_lls = {placeholder} {extra_cargue}
             ORDER BY id DESC LIMIT 1
@@ -663,6 +689,7 @@ def get_detalle_visita(primera_lls, cargue_id=None):
             'aliado': row['aliado'],
             'segmento': row['segmento'],
             'red': row['red'],
+            'proveedor_red': row['proveedor_red'],
             'comunidad': row['comunidad'],
             'primera_lls': row['primera_lls'],
             'rango_primer_arreglo': row['rango_primer_arreglo'],
@@ -715,6 +742,7 @@ def guardar_hallazgo(datos):
         'region': ...,
         'segmento': ...,
         'red': ...,
+        'proveedor_red': ...,
         'comunidad': ...,
         'primera_lls': ...,
         'rango_primer_arreglo': ...,
@@ -725,9 +753,26 @@ def guardar_hallazgo(datos):
     """
     conn, engine = get_connection()
     try:
+        # Asegurar proveedor_red válido ('Claro', 'OnNet', 'Atp')
+        if not datos.get('proveedor_red'):
+            red_val = str(datos.get('red', '')).strip().upper()
+            com_val = str(datos.get('comunidad', '')).strip()
+            if 'NEUTRA' in red_val:
+                datos['proveedor_red'] = get_proveedor_red_neutra_ciudad(com_val)
+            else:
+                datos['proveedor_red'] = 'Claro'
+        else:
+            p = str(datos['proveedor_red']).strip().upper()
+            if 'ONNET' in p or 'ON NET' in p:
+                datos['proveedor_red'] = 'OnNet'
+            elif 'ATP' in p:
+                datos['proveedor_red'] = 'Atp'
+            else:
+                datos['proveedor_red'] = 'Claro'
+
         cols = [
             'telegram_user_id', 'telegram_username', 'telegram_nombre',
-            'ot', 'cuenta', 'aliado', 'region', 'segmento', 'red', 'comunidad',
+            'ot', 'cuenta', 'aliado', 'region', 'segmento', 'red', 'proveedor_red', 'comunidad',
             'primera_lls', 'rango_primer_arreglo', 'causa', 'subcausa', 'observaciones'
         ]
         vals = [datos.get(c) for c in cols]

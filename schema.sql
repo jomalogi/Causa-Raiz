@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS `hallazgos_respuestas` (
     `region` VARCHAR(50) NULL,
     `segmento` VARCHAR(100) NULL,
     `red` VARCHAR(50) NULL,
+    `proveedor_red` VARCHAR(150) NULL,
     `comunidad` VARCHAR(150) NULL,
     `primera_lls` BIGINT NULL,
     `rango_primer_arreglo` VARCHAR(100) NULL,
