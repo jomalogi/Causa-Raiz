@@ -671,7 +671,7 @@ def get_detalle_visita(primera_lls, cargue_id=None):
         placeholder = "%s" if engine == "mysql" else "?"
         extra_cargue = f"AND cargue_id = {placeholder}" if cargue_id else ""
         sql = f"""
-            SELECT ot, cuenta, aliado, segmento, red, proveedor_red, comunidad, primera_lls, rango_primer_arreglo, estado, trabajo, fecha_trabajo_ini
+            SELECT ot, cuenta, aliado, region, segmento, red, proveedor_red, comunidad, primera_lls, rango_primer_arreglo, estado, trabajo, fecha_trabajo_ini
             FROM visitas_calidad 
             WHERE primera_lls = {placeholder} {extra_cargue}
             ORDER BY id DESC LIMIT 1
@@ -687,6 +687,7 @@ def get_detalle_visita(primera_lls, cargue_id=None):
             'ot': row['ot'],
             'cuenta': row['cuenta'],
             'aliado': row['aliado'],
+            'region': row['region'],
             'segmento': row['segmento'],
             'red': row['red'],
             'proveedor_red': row['proveedor_red'],
@@ -696,6 +697,37 @@ def get_detalle_visita(primera_lls, cargue_id=None):
             'estado': row['estado'],
             'trabajo': row['trabajo'],
             'fecha_trabajo_ini': row['fecha_trabajo_ini']
+        }
+    finally:
+        conn.close()
+
+def get_info_by_ot_or_lls(val):
+    """Busca los datos territoriales y de red por OT o Primera LLS si existe en visitas_calidad."""
+    if not val:
+        return None
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        placeholder = "%s" if engine == "mysql" else "?"
+        sql = f"""
+            SELECT region, aliado, red, proveedor_red, comunidad, segmento
+            FROM visitas_calidad
+            WHERE ot = {placeholder} OR primera_lls = {placeholder}
+            ORDER BY id DESC LIMIT 1
+        """
+        cur.execute(sql, (val, val))
+        row = cur.fetchone()
+        if not row:
+            return None
+        if engine == "mysql":
+            return dict(row)
+        return {
+            'region': row['region'],
+            'aliado': row['aliado'],
+            'red': row['red'],
+            'proveedor_red': row['proveedor_red'],
+            'comunidad': row['comunidad'],
+            'segmento': row['segmento']
         }
     finally:
         conn.close()

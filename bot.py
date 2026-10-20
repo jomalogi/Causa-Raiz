@@ -467,6 +467,19 @@ def view_listar_llamadas(chat_id, message_id=None, page=0):
 def view_ingreso_manual_ot(chat_id, message_id=None):
     """Paso Manual 1: Solicitar número de OT al usuario."""
     session = get_session(chat_id)
+    
+    # Validar que existan los datos territoriales previos (Región, Aliado, Ciudad)
+    # Si la sesión se reinició o no hay región seleccionada, redirigir a seleccionar región
+    if not session.get('region') or not session.get('comunidad'):
+        texto = (
+            "⚠️ *Selección requerida*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Para registrar una OT manual, primero debes seleccionar la *Región*, *Red* y *Ciudad* a la que pertenece la orden.\n\n"
+            "📍 Por favor selecciona la *Región*:"
+        )
+        view_seleccionar_region(chat_id, message_id)
+        return
+
     session['step'] = 'MANUAL_OT'
     session['is_manual'] = True
     session['manual_ot'] = None
@@ -739,23 +752,48 @@ def view_guardar_resultado(chat_id, subcausa_idx, user_info, message_id=None):
 
     visita = session.get('visita') or {}
     causa = session.get('causa_nombre')
-    region_val = session.get('region') or visita.get('region') or ''
     is_manual = session.get('is_manual', False)
+
+    ot_val = visita.get('ot') or session.get('manual_ot')
+    cuenta_val = visita.get('cuenta') or session.get('manual_cuenta')
+
+    # Región con fallback seguro
+    region_val = session.get('region') or visita.get('region') or ''
+    aliado_val = visita.get('aliado') or session.get('aliado') or ''
+    red_val = visita.get('red') or session.get('red') or ''
+    comunidad_val = visita.get('comunidad') or session.get('comunidad') or ''
+    segmento_val = visita.get('segmento') or session.get('manual_segmento') or session.get('segmento') or 'Masivo'
+    proveedor_val = visita.get('proveedor_red') or session.get('manual_proveedor_red') or session.get('proveedor_red')
+
+    # Si faltara algún dato territorial y la OT existe en la base, autocompletar
+    if ot_val and (not region_val or not aliado_val or not red_val or not comunidad_val):
+        info_db = db.get_info_by_ot_or_lls(ot_val)
+        if info_db:
+            if not region_val and info_db.get('region'):
+                region_val = info_db['region']
+            if not aliado_val and info_db.get('aliado'):
+                aliado_val = info_db['aliado']
+            if not red_val and info_db.get('red'):
+                red_val = info_db['red']
+            if not comunidad_val and info_db.get('comunidad'):
+                comunidad_val = info_db['comunidad']
+            if not proveedor_val and info_db.get('proveedor_red'):
+                proveedor_val = info_db['proveedor_red']
 
     # Preparar payload para insertar en MySQL
     datos_hallazgo = {
         'telegram_user_id': user_info.get('id'),
         'telegram_username': user_info.get('username', ''),
         'telegram_nombre': f"{user_info.get('first_name', '')} {user_info.get('last_name', '')}".strip(),
-        'ot': visita.get('ot'),
-        'cuenta': visita.get('cuenta'),
-        'aliado': visita.get('aliado'),
-        'region': region_val,
-        'segmento': visita.get('segmento'),
-        'red': visita.get('red'),
-        'proveedor_red': visita.get('proveedor_red') or session.get('proveedor_red'),
-        'comunidad': visita.get('comunidad'),
-        'primera_lls': visita.get('primera_lls'),
+        'ot': ot_val,
+        'cuenta': cuenta_val,
+        'aliado': aliado_val or ('Ingreso Manual' if is_manual else 'Sin Aliado'),
+        'region': region_val or ('Sin Región' if is_manual else ''),
+        'segmento': segmento_val,
+        'red': red_val or ('Sin Red' if is_manual else ''),
+        'proveedor_red': proveedor_val,
+        'comunidad': comunidad_val or ('Sin Ciudad' if is_manual else ''),
+        'primera_lls': visita.get('primera_lls') or ot_val,
         'rango_primer_arreglo': visita.get('rango_primer_arreglo', 'Manual / Fuera de Base'),
         'causa': causa,
         'subcausa': subcausa,
@@ -855,15 +893,37 @@ def handle_callback(update):
         else:
             prov = "Claro"
         session['manual_proveedor_red'] = prov
+        reg = session.get('region') or ''
+        ali = session.get('aliado') or ''
+        red_val = session.get('red') or ''
+        com = session.get('comunidad') or ''
+        seg = session.get('manual_segmento') or session.get('segmento') or 'Masivo'
+
+        # Si la OT o LLS existe en visitas_calidad, autocompletar si falta algún dato
+        info_db = db.get_info_by_ot_or_lls(session.get('manual_ot'))
+        if info_db:
+            if not reg and info_db.get('region'):
+                reg = info_db['region']
+                session['region'] = reg
+            if not ali and info_db.get('aliado'):
+                ali = info_db['aliado']
+                session['aliado'] = ali
+            if not red_val and info_db.get('red'):
+                red_val = info_db['red']
+                session['red'] = red_val
+            if not com and info_db.get('comunidad'):
+                com = info_db['comunidad']
+                session['comunidad'] = com
+
         session['visita'] = {
             'ot': session['manual_ot'],
             'cuenta': session['manual_cuenta'],
-            'aliado': session.get('aliado', 'Sin Aliado'),
-            'segmento': session.get('manual_segmento', 'Masivo'),
-            'red': session.get('red', 'Sin Red'),
+            'aliado': ali or 'Sin Aliado',
+            'segmento': seg,
+            'red': red_val or 'Sin Red',
             'proveedor_red': prov,
-            'region': session.get('region', 'Sin Región'),
-            'comunidad': session.get('comunidad', 'Sin Ciudad'),
+            'region': reg or 'Sin Región',
+            'comunidad': com or 'Sin Ciudad',
             'primera_lls': session['manual_ot'],
             'rango_primer_arreglo': 'Manual / Fuera de Base',
             'estado': 'Manual',
