@@ -25,10 +25,12 @@ def main():
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect(SERVER_IP, port=SERVER_PORT, username=SERVER_USER, password=SERVER_PASS, timeout=10)
 
-    print("\n[1/4] Subiendo db.py y bot.py actualizados por SFTP...")
+    print("\n[1/4] Subiendo archivos actualizados por SFTP...")
     sftp = ssh.open_sftp()
     sftp.put(str(PROJECT_DIR / "db.py"), "/opt/bot_calidad/db.py")
     sftp.put(str(PROJECT_DIR / "bot.py"), "/opt/bot_calidad/bot.py")
+    sftp.put(str(PROJECT_DIR / "web_app.py"), "/opt/bot_calidad/web_app.py")
+    sftp.put(str(PROJECT_DIR / "schema.sql"), "/opt/bot_calidad/schema.sql")
     sftp.close()
     print("  -> Archivos transferidos exitosamente a /opt/bot_calidad/")
 

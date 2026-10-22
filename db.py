@@ -169,10 +169,32 @@ def init_db():
                     estado TEXT DEFAULT 'Completado'
                 );
                 """)
+                conn.execute("""
+                CREATE TABLE IF NOT EXISTS validacion_cambio_vias_onnet (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    telegram_user_id INTEGER NOT NULL,
+                    telegram_username TEXT,
+                    telegram_nombre TEXT,
+                    region TEXT,
+                    red TEXT DEFAULT 'Red Neutra',
+                    aliado TEXT,
+                    segmento TEXT,
+                    comunidad TEXT,
+                    cuenta INTEGER,
+                    cambio_vias_automatico TEXT,
+                    cambio_vias_exitoso TEXT,
+                    tiempo_duracion TEXT,
+                    experiencia_tecnico TEXT,
+                    observaciones TEXT
+                );
+                """)
                 # Indices en SQLite
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_vis_cargue ON visitas_calidad(cargue_id);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_vis_filtros ON visitas_calidad(region, red, comunidad, rango_primer_arreglo);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_vis_lls ON visitas_calidad(primera_lls);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_vias_fecha ON validacion_cambio_vias_onnet(fecha_registro);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_vias_cuenta ON validacion_cambio_vias_onnet(cuenta);")
                 
                 # Migraciones para columnas agregadas posteriormente
                 for col in ["region", "proveedor_red"]:
@@ -902,3 +924,132 @@ def get_ultimos_hallazgos(limit=50):
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+def guardar_validacion_vias(datos):
+    # Guarda la respuesta de Validacion Cambio Vias Onnet en validacion_cambio_vias_onnet
+    conn, engine = get_connection()
+    try:
+        cols = [
+            'telegram_user_id', 'telegram_username', 'telegram_nombre',
+            'region', 'red', 'aliado', 'segmento', 'comunidad', 'cuenta',
+            'cambio_vias_automatico', 'cambio_vias_exitoso', 'tiempo_duracion',
+            'experiencia_tecnico', 'observaciones'
+        ]
+        vals = [datos.get(c) for c in cols]
+        
+        if engine == "mysql":
+            with conn.cursor() as cur:
+                placeholders = ", ".join(["%s"] * len(cols))
+                col_names = ", ".join([f"`{c}`" for c in cols])
+                sql = f"INSERT INTO validacion_cambio_vias_onnet ({col_names}) VALUES ({placeholders})"
+                cur.execute(sql, vals)
+                registro_id = cur.lastrowid
+        else:
+            with conn:
+                cur = conn.cursor()
+                placeholders = ", ".join(["?"] * len(cols))
+                col_names = ", ".join(cols)
+                sql = f"INSERT INTO validacion_cambio_vias_onnet ({col_names}) VALUES ({placeholders})"
+                cur.execute(sql, vals)
+                registro_id = cur.lastrowid
+
+        print(f"[DB] Validacion Cambio Vias guardada ID #{registro_id} por {datos.get('telegram_username')}")
+        return registro_id
+    finally:
+        conn.close()
+
+def get_validaciones_vias(limit=1000):
+    # Retorna las validaciones de cambio de vias registradas
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        sql = f"SELECT * FROM validacion_cambio_vias_onnet ORDER BY id DESC LIMIT {limit}"
+        cur.execute(sql)
+        rows = cur.fetchall()
+        if engine == "mysql":
+            return [dict(r) for r in rows]
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+def get_estadisticas_vias():
+    # Retorna metricas y datos para los graficos de barras de Validacion Cambio Vias Onnet.
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        
+        # 1. Total
+        cur.execute("SELECT COUNT(*) FROM validacion_cambio_vias_onnet")
+        total = cur.fetchone()[0] if engine == "sqlite" else list(cur.fetchone().values())[0]
+        
+        stats = {
+            'total': total,
+            'pct_auto': 0.0,
+            'pct_exito': 0.0,
+            'pct_exp_pos': 0.0,
+            'auto_labels': ['Sí', 'No'],
+            'auto_values': [0, 0],
+            'exito_labels': ['Sí', 'No'],
+            'exito_values': [0, 0],
+            'tiempo_labels': ['1 a 2 Minutos', '2 a 3 Minutos', 'Más de 3 Minutos'],
+            'tiempo_values': [0, 0, 0],
+            'exp_labels': ['Positiva', 'Negativa'],
+            'exp_values': [0, 0],
+            'ciudades_labels': [],
+            'ciudades_values': [],
+            'aliados_labels': [],
+            'aliados_values': []
+        }
+        
+        if total == 0:
+            return stats
+            
+        def fetch_counts(query):
+            cur.execute(query)
+            if engine == "mysql":
+                return [(r['label'] or 'Sin datos', r['cnt']) for r in cur.fetchall()]
+            else:
+                return [(r[0] or 'Sin datos', r[1]) for r in cur.fetchall()]
+
+        # 2. Automático
+        auto_data = dict(fetch_counts("SELECT cambio_vias_automatico as label, COUNT(*) as cnt FROM validacion_cambio_vias_onnet GROUP BY cambio_vias_automatico"))
+        si_auto = auto_data.get('Si', 0) + auto_data.get('SI', 0) + auto_data.get('Sí', 0)
+        no_auto = auto_data.get('No', 0) + auto_data.get('NO', 0)
+        stats['auto_values'] = [si_auto, no_auto]
+        stats['pct_auto'] = round((si_auto / total) * 100, 1) if total > 0 else 0.0
+
+        # 3. Exitoso
+        exito_data = dict(fetch_counts("SELECT cambio_vias_exitoso as label, COUNT(*) as cnt FROM validacion_cambio_vias_onnet GROUP BY cambio_vias_exitoso"))
+        si_exito = exito_data.get('Si', 0) + exito_data.get('SI', 0) + exito_data.get('Sí', 0)
+        no_exito = exito_data.get('No', 0) + exito_data.get('NO', 0)
+        stats['exito_values'] = [si_exito, no_exito]
+        stats['pct_exito'] = round((si_exito / total) * 100, 1) if total > 0 else 0.0
+
+        # 4. Tiempo
+        tiempo_data = dict(fetch_counts("SELECT tiempo_duracion as label, COUNT(*) as cnt FROM validacion_cambio_vias_onnet GROUP BY tiempo_duracion"))
+        t1 = tiempo_data.get('1 a 2 Minutos', 0)
+        t2 = tiempo_data.get('2 a 3 Minutos', 0)
+        t3 = tiempo_data.get('Mas de 3 Minutos', 0) + tiempo_data.get('Más de 3 Minutos', 0)
+        stats['tiempo_values'] = [t1, t2, t3]
+
+        # 5. Experiencia
+        exp_data = dict(fetch_counts("SELECT experiencia_tecnico as label, COUNT(*) as cnt FROM validacion_cambio_vias_onnet GROUP BY experiencia_tecnico"))
+        pos_exp = exp_data.get('Positiva', 0)
+        neg_exp = exp_data.get('Negativa', 0)
+        stats['exp_values'] = [pos_exp, neg_exp]
+        stats['pct_exp_pos'] = round((pos_exp / total) * 100, 1) if total > 0 else 0.0
+
+        # 6. Por Ciudad (top 8)
+        ciudades = fetch_counts("SELECT comunidad as label, COUNT(*) as cnt FROM validacion_cambio_vias_onnet WHERE comunidad IS NOT NULL AND comunidad != '' GROUP BY comunidad ORDER BY cnt DESC LIMIT 8")
+        stats['ciudades_labels'] = [c[0] for c in ciudades]
+        stats['ciudades_values'] = [c[1] for c in ciudades]
+
+        # 7. Por Aliado (top 8)
+        aliados = fetch_counts("SELECT aliado as label, COUNT(*) as cnt FROM validacion_cambio_vias_onnet WHERE aliado IS NOT NULL AND aliado != '' GROUP BY aliado ORDER BY cnt DESC LIMIT 8")
+        stats['aliados_labels'] = [a[0] for a in aliados]
+        stats['aliados_values'] = [a[1] for a in aliados]
+
+        return stats
+    finally:
+        conn.close()
+

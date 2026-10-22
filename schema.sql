@@ -95,3 +95,27 @@ CREATE TABLE IF NOT EXISTS `hallazgos_respuestas` (
     INDEX `idx_resp_telegram_user` (`telegram_user_id`),
     INDEX `idx_resp_fecha` (`fecha_registro`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 5. Tabla de Validación Cambio Vías Onnet (Red Neutra)
+CREATE TABLE IF NOT EXISTS `validacion_cambio_vias_onnet` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `fecha_registro` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `telegram_user_id` BIGINT NOT NULL,
+    `telegram_username` VARCHAR(100) NULL,
+    `telegram_nombre` VARCHAR(150) NULL,
+    `region` VARCHAR(50) NULL,
+    `red` VARCHAR(50) DEFAULT 'Red Neutra',
+    `aliado` VARCHAR(150) NULL,
+    `segmento` VARCHAR(100) NULL,
+    `comunidad` VARCHAR(150) NULL,
+    `cuenta` BIGINT NULL,
+    `cambio_vias_automatico` VARCHAR(20) NULL,
+    `cambio_vias_exitoso` VARCHAR(20) NULL,
+    `tiempo_duracion` VARCHAR(50) NULL,
+    `experiencia_tecnico` VARCHAR(50) NULL,
+    `observaciones` TEXT NULL,
+    INDEX `idx_vias_cuenta` (`cuenta`),
+    INDEX `idx_vias_comunidad` (`comunidad`),
+    INDEX `idx_vias_fecha` (`fecha_registro`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

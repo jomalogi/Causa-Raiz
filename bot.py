@@ -43,6 +43,11 @@ def get_session(chat_id):
             'manual_segmento': None,
             'manual_proveedor_red': None,
             'is_manual': False,
+            'vias_cuenta': None,
+            'vias_auto': None,
+            'vias_exito': None,
+            'vias_tiempo': None,
+            'vias_exp': None,
             'page_ali': 0,
             'page_com': 0,
             'page_lls': 0,
@@ -77,6 +82,11 @@ def reset_session(chat_id):
         'manual_segmento': None,
         'manual_proveedor_red': None,
         'is_manual': False,
+        'vias_cuenta': None,
+        'vias_auto': None,
+        'vias_exito': None,
+        'vias_tiempo': None,
+        'vias_exp': None,
         'page_ali': 0,
         'page_com': 0,
         'page_lls': 0,
@@ -351,6 +361,144 @@ def view_seleccionar_comunidad(chat_id, message_id=None, page=0):
     markup = {"inline_keyboard": keyboard}
     edit_message(chat_id, message_id, texto, markup)
 
+def view_opciones_red_neutra(chat_id, message_id=None):
+    """Muestra opciones para Red Neutra tras seleccionar la Ciudad: Realizar Causa Raíz o Validación Cambio Vías Onnet."""
+    session = get_session(chat_id)
+    region = session.get('region')
+    aliado = session.get('aliado')
+    segmento = session.get('segmento')
+    comunidad = session.get('comunidad')
+    
+    session['step'] = 'SELECT_OPCION_NEUTRA'
+    
+    texto = (
+        f"📍 Región: *{region}* | Red: *Red Neutra*\n"
+        f"🤝 Aliado: *{aliado}* | 👥 Segmento: *{segmento}*\n"
+        f"🏙️ Ciudad: *{comunidad}*\n\n"
+        "🛠️ *Selecciona la opción que deseas gestionar:*"
+    )
+    keyboard = [
+        [{"text": "🔍 Realizar Causa Raíz", "callback_data": "neutra_opt:causa_raiz"}],
+        [{"text": "🔄 Validación Cambio Vías Onnet", "callback_data": "neutra_opt:cambio_vias"}],
+        [{"text": "⬅️ Cambiar Ciudad", "callback_data": "nav:back_com"}]
+    ]
+    markup = {"inline_keyboard": keyboard}
+    if message_id:
+        edit_message(chat_id, message_id, texto, markup)
+    else:
+        send_message(chat_id, texto, markup)
+
+def view_vias_paso1_cuenta(chat_id, message_id=None):
+    """Paso 1 Validación Vías: Ingrese Número de Cuenta."""
+    session = get_session(chat_id)
+    session['step'] = 'VIAS_CUENTA'
+    comunidad = session.get('comunidad')
+    aliado = session.get('aliado')
+    
+    texto = (
+        "🔄 *Validación Cambio de Vías Onnet*\n"
+        f"🏙️ *Ciudad:* {comunidad} | 🤝 *Aliado:* {aliado}\n\n"
+        "1️⃣ *Ingrese Número de Cuenta:*\n\n"
+        "✍️ _Por favor escribe el número de cuenta en el chat a continuación:_"
+    )
+    keyboard = [
+        [{"text": "⬅️ Volver", "callback_data": "nav:back_neutra_opt"}]
+    ]
+    markup = {"inline_keyboard": keyboard}
+    if message_id:
+        edit_message(chat_id, message_id, texto, markup)
+    else:
+        send_message(chat_id, texto, markup)
+
+def view_vias_paso2_auto(chat_id, message_id=None):
+    """Paso 2 Validación Vías: ¿Cambio de vías automático? (Si / No)."""
+    session = get_session(chat_id)
+    session['step'] = 'VIAS_AUTO'
+    cuenta = session.get('vias_cuenta')
+    
+    texto = (
+        "🔄 *Validación Cambio de Vías Onnet*\n"
+        f"📋 Cuenta: *{cuenta}*\n\n"
+        "2️⃣ *Cambio de vías automático:*"
+    )
+    keyboard = [
+        [
+            {"text": "✅ Sí", "callback_data": "vias_auto:Si"},
+            {"text": "❌ No", "callback_data": "vias_auto:No"}
+        ],
+        [{"text": "⬅️ Corregir Cuenta", "callback_data": "vias_back:cuenta"}]
+    ]
+    markup = {"inline_keyboard": keyboard}
+    if message_id:
+        edit_message(chat_id, message_id, texto, markup)
+    else:
+        send_message(chat_id, texto, markup)
+
+def view_vias_paso3_exitoso(chat_id, message_id=None):
+    """Paso 3 Validación Vías: ¿Cambio de vías exitoso? (Si / No)."""
+    session = get_session(chat_id)
+    session['step'] = 'VIAS_EXITO'
+    cuenta = session.get('vias_cuenta')
+    auto = session.get('vias_auto')
+    
+    texto = (
+        "🔄 *Validación Cambio de Vías Onnet*\n"
+        f"📋 Cuenta: *{cuenta}* | Automático: *{auto}*\n\n"
+        "3️⃣ *Cambio de vías exitoso:*"
+    )
+    keyboard = [
+        [
+            {"text": "✅ Sí", "callback_data": "vias_exito:Si"},
+            {"text": "❌ No", "callback_data": "vias_exito:No"}
+        ],
+        [{"text": "⬅️ Volver", "callback_data": "vias_back:auto"}]
+    ]
+    markup = {"inline_keyboard": keyboard}
+    edit_message(chat_id, message_id, texto, markup)
+
+def view_vias_paso4_tiempo(chat_id, message_id=None):
+    """Paso 4 Validación Vías: Tiempo de duración."""
+    session = get_session(chat_id)
+    session['step'] = 'VIAS_TIEMPO'
+    cuenta = session.get('vias_cuenta')
+    exito = session.get('vias_exito')
+    
+    texto = (
+        "🔄 *Validación Cambio de Vías Onnet*\n"
+        f"📋 Cuenta: *{cuenta}* | Exitoso: *{exito}*\n\n"
+        "4️⃣ *Tiempo de duración:*"
+    )
+    keyboard = [
+        [{"text": "⏱️ 1 a 2 Minutos", "callback_data": "vias_tiempo:1 a 2 Minutos"}],
+        [{"text": "⏱️ 2 a 3 Minutos", "callback_data": "vias_tiempo:2 a 3 Minutos"}],
+        [{"text": "⏱️ Más de 3 Minutos", "callback_data": "vias_tiempo:Mas de 3 Minutos"}],
+        [{"text": "⬅️ Volver", "callback_data": "vias_back:exito"}]
+    ]
+    markup = {"inline_keyboard": keyboard}
+    edit_message(chat_id, message_id, texto, markup)
+
+def view_vias_paso5_experiencia(chat_id, message_id=None):
+    """Paso 5 Validación Vías: Experiencia del Técnico (Positiva / Negativa)."""
+    session = get_session(chat_id)
+    session['step'] = 'VIAS_EXP'
+    cuenta = session.get('vias_cuenta')
+    tiempo = session.get('vias_tiempo')
+    
+    texto = (
+        "🔄 *Validación Cambio de Vías Onnet*\n"
+        f"📋 Cuenta: *{cuenta}* | Duración: *{tiempo}*\n\n"
+        "5️⃣ *Experiencia del Técnico:*"
+    )
+    keyboard = [
+        [
+            {"text": "👍 Positiva", "callback_data": "vias_exp:Positiva"},
+            {"text": "👎 Negativa", "callback_data": "vias_exp:Negativa"}
+        ],
+        [{"text": "⬅️ Volver", "callback_data": "vias_back:tiempo"}]
+    ]
+    markup = {"inline_keyboard": keyboard}
+    edit_message(chat_id, message_id, texto, markup)
+
 def view_seleccionar_rango(chat_id, message_id=None):
     """Paso 6: Listar Rango de Primera LLS (RangoPrimerArreglo) o Ingresar OT Manualmente."""
     session = get_session(chat_id)
@@ -364,6 +512,9 @@ def view_seleccionar_rango(chat_id, message_id=None):
     session['rangos_list'] = rangos
     session['step'] = 'SELECT_RANGO'
     
+    back_target = "nav:back_neutra_opt" if red == 'Red Neutra' else "nav:back_com"
+    back_label = "⬅️ Volver a Opciones" if red == 'Red Neutra' else "⬅️ Cambiar Ciudad"
+
     if not rangos:
         texto = (
             f"📍 *Ciudad:* {comunidad}\n"
@@ -375,7 +526,7 @@ def view_seleccionar_rango(chat_id, message_id=None):
         markup = {
             "inline_keyboard": [
                 [{"text": "✍️ Ingresar OT Manualmente", "callback_data": "man:start"}],
-                [{"text": "⬅️ Cambiar Ciudad", "callback_data": "nav:back_com"}]
+                [{"text": back_label, "callback_data": back_target}]
             ]
         }
         edit_message(chat_id, message_id, texto, markup)
@@ -393,7 +544,7 @@ def view_seleccionar_rango(chat_id, message_id=None):
         keyboard.append([{"text": f"⏱️ {rng}", "callback_data": f"rng:{idx}"}])
         
     keyboard.append([{"text": "✍️ Ingresar OT Manualmente", "callback_data": "man:start"}])
-    keyboard.append([{"text": "⬅️ Cambiar Ciudad", "callback_data": "nav:back_com"}])
+    keyboard.append([{"text": back_label, "callback_data": back_target}])
     markup = {"inline_keyboard": keyboard}
     edit_message(chat_id, message_id, texto, markup)
 
@@ -1023,7 +1174,104 @@ def handle_callback(update):
         comunidades = session.get('comunidades_list', [])
         if idx < len(comunidades):
             session['comunidad'] = comunidades[idx]
+            if session.get('red') == 'Red Neutra':
+                view_opciones_red_neutra(chat_id, message_id)
+            else:
+                view_seleccionar_rango(chat_id, message_id)
+        return
+
+    # Opciones Red Neutra (Causa Raíz vs Validación Cambio Vías Onnet)
+    if data.startswith("neutra_opt:"):
+        opt = data.split(":", 1)[1]
+        if opt == "causa_raiz":
             view_seleccionar_rango(chat_id, message_id)
+        elif opt == "cambio_vias":
+            view_vias_paso1_cuenta(chat_id, message_id)
+        return
+
+    # Callbacks Validación Cambio Vías Onnet
+    if data.startswith("vias_auto:"):
+        session['vias_auto'] = data.split(":", 1)[1]
+        view_vias_paso3_exitoso(chat_id, message_id)
+        return
+
+    if data.startswith("vias_exito:"):
+        session['vias_exito'] = data.split(":", 1)[1]
+        view_vias_paso4_tiempo(chat_id, message_id)
+        return
+
+    if data.startswith("vias_tiempo:"):
+        session['vias_tiempo'] = data.split(":", 1)[1]
+        view_vias_paso5_experiencia(chat_id, message_id)
+        return
+
+    if data.startswith("vias_exp:"):
+        exp = data.split(":", 1)[1]
+        session['vias_exp'] = exp
+        
+        user_info = from_user or {}
+        first_name = user_info.get("first_name", "")
+        last_name = user_info.get("last_name", "")
+        nombre_completo = f"{first_name} {last_name}".strip() or "Supervisor"
+        username = user_info.get("username", "")
+
+        datos = {
+            'telegram_user_id': chat_id,
+            'telegram_username': username,
+            'telegram_nombre': nombre_completo,
+            'region': session.get('region', ''),
+            'red': session.get('red', 'Red Neutra'),
+            'aliado': session.get('aliado', ''),
+            'segmento': session.get('segmento', ''),
+            'comunidad': session.get('comunidad', ''),
+            'cuenta': int(session.get('vias_cuenta', 0)),
+            'cambio_vias_automatico': session.get('vias_auto', ''),
+            'cambio_vias_exitoso': session.get('vias_exito', ''),
+            'tiempo_duracion': session.get('vias_tiempo', ''),
+            'experiencia_tecnico': exp,
+            'observaciones': ''
+        }
+        registro_id = db.guardar_validacion_vias(datos)
+        
+        texto_confirmacion = (
+            "✅ *¡Validación Cambio de Vías Onnet Guardada!*\n\n"
+            f"🆔 *Registro:* `#{registro_id}`\n"
+            f"📋 *Cuenta:* `{datos['cuenta']}`\n"
+            f"🏙️ *Ciudad:* {datos['comunidad']} ({datos['region']})\n"
+            f"🤝 *Aliado:* {datos['aliado']} | 👥 *Segmento:* {datos['segmento']}\n\n"
+            f"• *Cambio automático:* {datos['cambio_vias_automatico']}\n"
+            f"• *Cambio exitoso:* {datos['cambio_vias_exitoso']}\n"
+            f"• *Duración:* {datos['tiempo_duracion']}\n"
+            f"• *Experiencia:* {'👍 Positiva' if exp == 'Positiva' else '👎 Negativa'}\n"
+            f"• *Registrado por:* {nombre_completo} (@{username})\n\n"
+            "¡Los datos ya están disponibles en el panel de control web!"
+        )
+        keyboard = [
+            [{"text": "🔄 Nueva Validación de Vías", "callback_data": "neutra_opt:cambio_vias"}],
+            [{"text": "🏠 Menú Principal", "callback_data": "nav:restart"}]
+        ]
+        markup = {"inline_keyboard": keyboard}
+        edit_message(chat_id, message_id, texto_confirmacion, markup)
+        return
+
+    if data == "vias_back:cuenta":
+        view_vias_paso1_cuenta(chat_id, message_id)
+        return
+
+    if data == "vias_back:auto":
+        view_vias_paso2_auto(chat_id, message_id)
+        return
+
+    if data == "vias_back:exito":
+        view_vias_paso3_exitoso(chat_id, message_id)
+        return
+
+    if data == "vias_back:tiempo":
+        view_vias_paso4_tiempo(chat_id, message_id)
+        return
+
+    if data == "nav:back_neutra_opt":
+        view_opciones_red_neutra(chat_id, message_id)
         return
 
     # Selección Rango
@@ -1115,6 +1363,22 @@ def handle_message(update):
             return
         session['manual_cuenta'] = int(digits)
         view_ingreso_manual_segmento(chat_id)
+        return
+
+    # Si está en el paso de ingresar Cuenta para Validación Cambio de Vías Onnet
+    if step == 'VIAS_CUENTA':
+        import re
+        digits = re.sub(r"\D", "", text)
+        if not digits:
+            send_message(
+                chat_id,
+                "⚠️ *Número de Cuenta inválido.*\n"
+                "Por favor escribe el número de la Cuenta (solo números):",
+                {"inline_keyboard": [[{"text": "⬅️ Volver", "callback_data": "nav:back_neutra_opt"}]]}
+            )
+            return
+        session['vias_cuenta'] = int(digits)
+        view_vias_paso2_auto(chat_id)
         return
 
     # Ante cualquier otro mensaje fuera de flujo guiado
