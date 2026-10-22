@@ -173,6 +173,13 @@ def init_db():
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_vis_cargue ON visitas_calidad(cargue_id);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_vis_filtros ON visitas_calidad(region, red, comunidad, rango_primer_arreglo);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_vis_lls ON visitas_calidad(primera_lls);")
+                
+                # Migraciones para columnas agregadas posteriormente
+                for col in ["region", "proveedor_red"]:
+                    try:
+                        conn.execute(f"ALTER TABLE hallazgos_respuestas ADD COLUMN {col} TEXT;")
+                    except Exception:
+                        pass
             print("[DB] Tablas SQLite inicializadas correctamente.")
     finally:
         conn.close()
@@ -442,39 +449,55 @@ def get_segmentos(region, red, aliado, cargue_id=None):
     finally:
         conn.close()
 
-def get_comunidades(region, red, aliado=None, segmento=None, cargue_id=None):
-    """Obtiene las ciudades/comunidades con OTs para la región, red, aliado y segmento."""
-    if not cargue_id:
-        cargue_id = get_latest_cargue_id()
-    if not cargue_id:
-        return []
-
+def get_comunidades(region, red=None, aliado=None, segmento=None, cargue_id=None):
+    """
+    Obtiene todas las ciudades/comunidades del histórico de la base de datos para la región
+    (tanto en visitas_calidad como en hallazgos_respuestas).
+    Permite que todas las ciudades históricas estén disponibles para selección e ingreso manual
+    incluso si no tienen llamadas en el lote más reciente cargado.
+    """
     conn, engine = get_connection()
     try:
         cur = conn.cursor()
         placeholder = "%s" if engine == "mysql" else "?"
-        conditions = [f"cargue_id = {placeholder}", f"region = {placeholder}", f"red = {placeholder}"]
-        params = [cargue_id, region, red]
-        
-        if aliado:
-            conditions.append(f"aliado = {placeholder}")
-            params.append(aliado)
-        if segmento:
-            conditions.append(f"segmento = {placeholder}")
-            params.append(segmento)
-            
-        where_clause = " AND ".join(conditions)
-        sql = f"""
-            SELECT DISTINCT comunidad FROM visitas_calidad 
-            WHERE {where_clause}
-              AND comunidad IS NOT NULL AND comunidad != ''
-            ORDER BY comunidad ASC
-        """
-        cur.execute(sql, tuple(params))
-        rows = cur.fetchall()
         if engine == "mysql":
+            sql = f"""
+                SELECT DISTINCT comunidad FROM (
+                    SELECT comunidad FROM visitas_calidad 
+                    WHERE region = {placeholder} AND comunidad IS NOT NULL AND comunidad != ''
+                    UNION
+                    SELECT comunidad FROM hallazgos_respuestas 
+                    WHERE region = {placeholder} AND comunidad IS NOT NULL AND comunidad != ''
+                ) t
+                ORDER BY comunidad ASC
+            """
+            cur.execute(sql, (region, region))
+            rows = cur.fetchall()
             return [r['comunidad'] for r in rows]
-        return [r[0] for r in rows]
+        else:
+            cur.execute("PRAGMA table_info(hallazgos_respuestas);")
+            cols = [r[1] for r in cur.fetchall()]
+            if 'region' in cols:
+                sql = """
+                    SELECT DISTINCT comunidad FROM (
+                        SELECT comunidad FROM visitas_calidad 
+                        WHERE region = ? AND comunidad IS NOT NULL AND comunidad != ''
+                        UNION
+                        SELECT comunidad FROM hallazgos_respuestas 
+                        WHERE region = ? AND comunidad IS NOT NULL AND comunidad != ''
+                    )
+                    ORDER BY comunidad ASC
+                """
+                cur.execute(sql, (region, region))
+            else:
+                sql = """
+                    SELECT DISTINCT comunidad FROM visitas_calidad 
+                    WHERE region = ? AND comunidad IS NOT NULL AND comunidad != ''
+                    ORDER BY comunidad ASC
+                """
+                cur.execute(sql, (region,))
+            rows = cur.fetchall()
+            return [r[0] for r in rows]
     finally:
         conn.close()
 
