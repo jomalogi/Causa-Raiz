@@ -184,6 +184,7 @@ def init_db():
                     cuenta INTEGER,
                     cambio_vias_automatico TEXT,
                     cambio_vias_exitoso TEXT,
+                    error_presentado TEXT,
                     tiempo_duracion TEXT,
                     experiencia_tecnico TEXT,
                     observaciones TEXT
@@ -202,6 +203,10 @@ def init_db():
                         conn.execute(f"ALTER TABLE hallazgos_respuestas ADD COLUMN {col} TEXT;")
                     except Exception:
                         pass
+                try:
+                    conn.execute("ALTER TABLE validacion_cambio_vias_onnet ADD COLUMN error_presentado TEXT;")
+                except Exception:
+                    pass
             print("[DB] Tablas SQLite inicializadas correctamente.")
     finally:
         conn.close()
@@ -932,8 +937,8 @@ def guardar_validacion_vias(datos):
         cols = [
             'telegram_user_id', 'telegram_username', 'telegram_nombre',
             'region', 'red', 'aliado', 'segmento', 'comunidad', 'cuenta',
-            'cambio_vias_automatico', 'cambio_vias_exitoso', 'tiempo_duracion',
-            'experiencia_tecnico', 'observaciones'
+            'cambio_vias_automatico', 'cambio_vias_exitoso', 'error_presentado',
+            'tiempo_duracion', 'experiencia_tecnico', 'observaciones'
         ]
         vals = [datos.get(c) for c in cols]
         
@@ -998,7 +1003,9 @@ def get_estadisticas_vias():
             'ciudades_labels': [],
             'ciudades_values': [],
             'aliados_labels': [],
-            'aliados_values': []
+            'aliados_values': [],
+            'errores_labels': [],
+            'errores_values': []
         }
         
         if total == 0:
@@ -1048,6 +1055,11 @@ def get_estadisticas_vias():
         aliados = fetch_counts("SELECT aliado as label, COUNT(*) as cnt FROM validacion_cambio_vias_onnet WHERE aliado IS NOT NULL AND aliado != '' GROUP BY aliado ORDER BY cnt DESC LIMIT 8")
         stats['aliados_labels'] = [a[0] for a in aliados]
         stats['aliados_values'] = [a[1] for a in aliados]
+
+        # 8. Errores presentados (cuando no fue exitoso)
+        errores = fetch_counts("SELECT error_presentado as label, COUNT(*) as cnt FROM validacion_cambio_vias_onnet WHERE error_presentado IS NOT NULL AND error_presentado != '' AND error_presentado != 'N/A' GROUP BY error_presentado ORDER BY cnt DESC")
+        stats['errores_labels'] = [e[0] for e in errores]
+        stats['errores_values'] = [e[1] for e in errores]
 
         return stats
     finally:

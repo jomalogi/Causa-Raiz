@@ -19,6 +19,15 @@ logger = logging.getLogger("BotCalidad")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8978005290:AAHkQcCm8dnIrHJ9lnNFNAUZElVZ6OghN9k")
 API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
+# Opciones de error para Validación Cambio de Vías Onnet
+ERRORES_CAMBIO_VIAS = [
+    "Error Consumiendo el servicio Resources",
+    "Acceso Denegado",
+    "Error Consumiendo el servicio ChangeRequest",
+    "Sin CTO Sugerida",
+    "Sin puertos Disponibles"
+]
+
 # Diccionario para almacenar el estado de la conversación por usuario
 # chat_id -> dict
 USER_SESSIONS = {}
@@ -46,6 +55,7 @@ def get_session(chat_id):
             'vias_cuenta': None,
             'vias_auto': None,
             'vias_exito': None,
+            'vias_error': None,
             'vias_tiempo': None,
             'vias_exp': None,
             'page_ali': 0,
@@ -85,6 +95,7 @@ def reset_session(chat_id):
         'vias_cuenta': None,
         'vias_auto': None,
         'vias_exito': None,
+        'vias_error': None,
         'vias_tiempo': None,
         'vias_exp': None,
         'page_ali': 0,
@@ -456,6 +467,27 @@ def view_vias_paso3_exitoso(chat_id, message_id=None):
     markup = {"inline_keyboard": keyboard}
     edit_message(chat_id, message_id, texto, markup)
 
+def view_vias_paso_error(chat_id, message_id=None):
+    """Paso intermedio Validación Vías: Error presentado cuando el cambio no fue exitoso."""
+    session = get_session(chat_id)
+    session['step'] = 'VIAS_ERROR'
+    cuenta = session.get('vias_cuenta')
+    
+    texto = (
+        "🔄 *Validación Cambio de Vías Onnet*\n"
+        f"📋 Cuenta: *{cuenta}* | Exitoso: *No*\n\n"
+        "⚠️ *Selecciona el Error presentado:*"
+    )
+    keyboard = []
+    for idx, err in enumerate(ERRORES_CAMBIO_VIAS):
+        keyboard.append([{"text": f"❌ {err}", "callback_data": f"vias_err:{idx}"}])
+    keyboard.append([{"text": "⬅️ Volver", "callback_data": "vias_back:exito"}])
+    markup = {"inline_keyboard": keyboard}
+    if message_id:
+        edit_message(chat_id, message_id, texto, markup)
+    else:
+        send_message(chat_id, texto, markup)
+
 def view_vias_paso4_tiempo(chat_id, message_id=None):
     """Paso 4 Validación Vías: Tiempo de duración."""
     session = get_session(chat_id)
@@ -463,6 +495,8 @@ def view_vias_paso4_tiempo(chat_id, message_id=None):
     cuenta = session.get('vias_cuenta')
     exito = session.get('vias_exito')
     
+    back_target = "vias_back:error" if exito == 'No' else "vias_back:exito"
+
     texto = (
         "🔄 *Validación Cambio de Vías Onnet*\n"
         f"📋 Cuenta: *{cuenta}* | Exitoso: *{exito}*\n\n"
@@ -472,7 +506,7 @@ def view_vias_paso4_tiempo(chat_id, message_id=None):
         [{"text": "⏱️ 1 a 2 Minutos", "callback_data": "vias_tiempo:1 a 2 Minutos"}],
         [{"text": "⏱️ 2 a 3 Minutos", "callback_data": "vias_tiempo:2 a 3 Minutos"}],
         [{"text": "⏱️ Más de 3 Minutos", "callback_data": "vias_tiempo:Mas de 3 Minutos"}],
-        [{"text": "⬅️ Volver", "callback_data": "vias_back:exito"}]
+        [{"text": "⬅️ Volver", "callback_data": back_target}]
     ]
     markup = {"inline_keyboard": keyboard}
     edit_message(chat_id, message_id, texto, markup)
@@ -1196,7 +1230,21 @@ def handle_callback(update):
         return
 
     if data.startswith("vias_exito:"):
-        session['vias_exito'] = data.split(":", 1)[1]
+        resp_exito = data.split(":", 1)[1]
+        session['vias_exito'] = resp_exito
+        if resp_exito == "No":
+            view_vias_paso_error(chat_id, message_id)
+        else:
+            session['vias_error'] = 'N/A'
+            view_vias_paso4_tiempo(chat_id, message_id)
+        return
+
+    if data.startswith("vias_err:"):
+        try:
+            err_idx = int(data.split(":", 1)[1])
+            session['vias_error'] = ERRORES_CAMBIO_VIAS[err_idx]
+        except (ValueError, IndexError):
+            session['vias_error'] = 'N/A'
         view_vias_paso4_tiempo(chat_id, message_id)
         return
 
@@ -1215,6 +1263,7 @@ def handle_callback(update):
         nombre_completo = f"{first_name} {last_name}".strip() or "Supervisor"
         username = user_info.get("username", "")
 
+        error_pres = session.get('vias_error') or 'N/A'
         datos = {
             'telegram_user_id': chat_id,
             'telegram_username': username,
@@ -1227,12 +1276,14 @@ def handle_callback(update):
             'cuenta': int(session.get('vias_cuenta', 0)),
             'cambio_vias_automatico': session.get('vias_auto', ''),
             'cambio_vias_exitoso': session.get('vias_exito', ''),
+            'error_presentado': error_pres,
             'tiempo_duracion': session.get('vias_tiempo', ''),
             'experiencia_tecnico': exp,
             'observaciones': ''
         }
         registro_id = db.guardar_validacion_vias(datos)
         
+        error_line = f"• *Error presentado:* {error_pres}\n" if error_pres != 'N/A' else ""
         texto_confirmacion = (
             "✅ *¡Validación Cambio de Vías Onnet Guardada!*\n\n"
             f"🆔 *Registro:* `#{registro_id}`\n"
@@ -1241,6 +1292,7 @@ def handle_callback(update):
             f"🤝 *Aliado:* {datos['aliado']} | 👥 *Segmento:* {datos['segmento']}\n\n"
             f"• *Cambio automático:* {datos['cambio_vias_automatico']}\n"
             f"• *Cambio exitoso:* {datos['cambio_vias_exitoso']}\n"
+            f"{error_line}"
             f"• *Duración:* {datos['tiempo_duracion']}\n"
             f"• *Experiencia:* {'👍 Positiva' if exp == 'Positiva' else '👎 Negativa'}\n"
             f"• *Registrado por:* {nombre_completo} (@{username})\n\n"
@@ -1264,6 +1316,10 @@ def handle_callback(update):
 
     if data == "vias_back:exito":
         view_vias_paso3_exitoso(chat_id, message_id)
+        return
+
+    if data == "vias_back:error":
+        view_vias_paso_error(chat_id, message_id)
         return
 
     if data == "vias_back:tiempo":

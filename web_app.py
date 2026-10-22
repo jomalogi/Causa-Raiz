@@ -420,6 +420,21 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
+                <!-- Gráficos de Barras: Fila 4 -->
+                <div class="row g-4 mb-4">
+                    <div class="col-12">
+                        <div class="card card-stat p-3 bg-white h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>7. Errores Presentados (Cuando no fue exitoso)</h6>
+                                <span class="badge bg-danger bg-opacity-10 text-danger">Fallas Detectadas</span>
+                            </div>
+                            <div class="chart-container" style="position: relative; height: 260px;">
+                                <canvas id="chartErrores"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Tabla de Registros de Validación de Vías -->
                 <div class="card card-stat mb-4">
                     <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center">
@@ -440,6 +455,7 @@ HTML_TEMPLATE = """
                                         <th>Segmento</th>
                                         <th>¿Automático?</th>
                                         <th>¿Exitoso?</th>
+                                        <th>Error Presentado</th>
                                         <th>Duración</th>
                                         <th>Experiencia</th>
                                         <th>Supervisor</th>
@@ -468,6 +484,13 @@ HTML_TEMPLATE = """
                                                         <span class="badge bg-danger">No</span>
                                                     {% endif %}
                                                 </td>
+                                                <td>
+                                                    {% if v.error_presentado and v.error_presentado != 'N/A' %}
+                                                        <span class="badge bg-danger text-wrap text-start" style="max-width: 200px;">{{ v.error_presentado }}</span>
+                                                    {% else %}
+                                                        <span class="text-muted">-</span>
+                                                    {% endif %}
+                                                </td>
                                                 <td><span class="badge bg-light text-dark border">{{ v.tiempo_duracion }}</span></td>
                                                 <td>
                                                     {% if v.experiencia_tecnico == 'Positiva' %}
@@ -481,7 +504,7 @@ HTML_TEMPLATE = """
                                         {% endfor %}
                                     {% else %}
                                         <tr>
-                                            <td colspan="10" class="text-center py-4 text-muted">
+                                            <td colspan="11" class="text-center py-4 text-muted">
                                                 <i class="bi bi-inbox fs-2 d-block mb-1"></i>
                                                 Aún no se han registrado validaciones de cambio de vías Onnet.
                                             </td>
@@ -610,6 +633,26 @@ HTML_TEMPLATE = """
                         label: 'Validaciones',
                         data: statsVias.aliados_values.length ? statsVias.aliados_values : [0],
                         backgroundColor: '#6610f2',
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+                }
+            });
+
+            // 7. Chart Errores
+            new Chart(document.getElementById('chartErrores'), {
+                type: 'bar',
+                data: {
+                    labels: statsVias.errores_labels.length ? statsVias.errores_labels : ['Sin fallas registradas'],
+                    datasets: [{
+                        label: 'Ocurrencias',
+                        data: statsVias.errores_values.length ? statsVias.errores_values : [0],
+                        backgroundColor: '#dc3545',
                         borderRadius: 6
                     }]
                 },

@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS `validacion_cambio_vias_onnet` (
     `cuenta` BIGINT NULL,
     `cambio_vias_automatico` VARCHAR(20) NULL,
     `cambio_vias_exitoso` VARCHAR(20) NULL,
+    `error_presentado` VARCHAR(150) NULL,
     `tiempo_duracion` VARCHAR(50) NULL,
     `experiencia_tecnico` VARCHAR(50) NULL,
     `observaciones` TEXT NULL,
