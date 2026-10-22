@@ -452,9 +452,10 @@ def get_segmentos(region, red, aliado, cargue_id=None):
 def get_comunidades(region, red=None, aliado=None, segmento=None, cargue_id=None):
     """
     Obtiene todas las ciudades/comunidades del histórico de la base de datos para la región
-    (tanto en visitas_calidad como en hallazgos_respuestas).
-    Permite que todas las ciudades históricas estén disponibles para selección e ingreso manual
-    incluso si no tienen llamadas en el lote más reciente cargado.
+    (tanto en visitas_calidad como en hallazgos_respuestas), excluyendo aquellas ciudades
+    donde solo se tiene red DTH.
+    Permite que todas las ciudades históricas con redes fijas/neutras estén disponibles
+    para selección e ingreso manual incluso si no tienen llamadas en el lote más reciente cargado.
     """
     conn, engine = get_connection()
     try:
@@ -464,10 +465,10 @@ def get_comunidades(region, red=None, aliado=None, segmento=None, cargue_id=None
             sql = f"""
                 SELECT DISTINCT comunidad FROM (
                     SELECT comunidad FROM visitas_calidad 
-                    WHERE region = {placeholder} AND comunidad IS NOT NULL AND comunidad != ''
+                    WHERE region = {placeholder} AND red != 'DTH' AND red IS NOT NULL AND red != '' AND comunidad IS NOT NULL AND comunidad != ''
                     UNION
                     SELECT comunidad FROM hallazgos_respuestas 
-                    WHERE region = {placeholder} AND comunidad IS NOT NULL AND comunidad != ''
+                    WHERE region = {placeholder} AND red != 'DTH' AND red IS NOT NULL AND red != '' AND comunidad IS NOT NULL AND comunidad != ''
                 ) t
                 ORDER BY comunidad ASC
             """
@@ -481,10 +482,10 @@ def get_comunidades(region, red=None, aliado=None, segmento=None, cargue_id=None
                 sql = """
                     SELECT DISTINCT comunidad FROM (
                         SELECT comunidad FROM visitas_calidad 
-                        WHERE region = ? AND comunidad IS NOT NULL AND comunidad != ''
+                        WHERE region = ? AND red != 'DTH' AND red IS NOT NULL AND red != '' AND comunidad IS NOT NULL AND comunidad != ''
                         UNION
                         SELECT comunidad FROM hallazgos_respuestas 
-                        WHERE region = ? AND comunidad IS NOT NULL AND comunidad != ''
+                        WHERE region = ? AND red != 'DTH' AND red IS NOT NULL AND red != '' AND comunidad IS NOT NULL AND comunidad != ''
                     )
                     ORDER BY comunidad ASC
                 """
@@ -492,7 +493,7 @@ def get_comunidades(region, red=None, aliado=None, segmento=None, cargue_id=None
             else:
                 sql = """
                     SELECT DISTINCT comunidad FROM visitas_calidad 
-                    WHERE region = ? AND comunidad IS NOT NULL AND comunidad != ''
+                    WHERE region = ? AND red != 'DTH' AND red IS NOT NULL AND red != '' AND comunidad IS NOT NULL AND comunidad != ''
                     ORDER BY comunidad ASC
                 """
                 cur.execute(sql, (region,))
