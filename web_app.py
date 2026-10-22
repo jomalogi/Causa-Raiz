@@ -24,6 +24,7 @@ HTML_TEMPLATE = """
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
     <style>
         body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .navbar-custom { background: linear-gradient(135deg, #da291c, #9e1b12); }
@@ -523,6 +524,86 @@ HTML_TEMPLATE = """
     <script>
         const statsVias = {{ stats_vias | tojson }};
 
+        // Registrar ChartDataLabels si está disponible desde CDN, o usar fallback canvas integrado
+        if (typeof ChartDataLabels !== 'undefined') {
+            Chart.register(ChartDataLabels);
+        } else {
+            Chart.register({
+                id: 'customDataLabelsFallback',
+                afterDatasetsDraw(chart) {
+                    const { ctx } = chart;
+                    chart.data.datasets.forEach((dataset, datasetIndex) => {
+                        const meta = chart.getDatasetMeta(datasetIndex);
+                        if (!meta.hidden) {
+                            const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+                            meta.data.forEach((element, index) => {
+                                const val = Number(dataset.data[index]);
+                                if (val > 0) {
+                                    const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '';
+                                    const label = `${val} (${pct})`;
+                                    ctx.save();
+                                    ctx.font = 'bold 11px sans-serif';
+                                    ctx.fillStyle = '#1e293b';
+                                    ctx.textAlign = 'center';
+                                    ctx.textBaseline = 'bottom';
+                                    ctx.fillText(label, element.x, element.y - 4);
+                                    ctx.restore();
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+        }
+
+        // Generador de opciones para que todas las gráficas muestren cantidad y porcentaje tanto en barras como en tooltip
+        function buildBarOptions(metricLabel) {
+            return {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const val = context.parsed.y;
+                                const dataset = context.dataset;
+                                const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+                                const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
+                                return ` ${dataset.label || metricLabel || 'Total'}: ${val} (${pct})`;
+                            }
+                        }
+                    },
+                    datalabels: {
+                        anchor: 'end',
+                        align: 'top',
+                        offset: 4,
+                        font: {
+                            weight: 'bold',
+                            size: 11,
+                            family: "'Segoe UI', Tahoma, sans-serif"
+                        },
+                        color: '#1e293b',
+                        formatter: function(value, context) {
+                            if (!value || value === 0) return '';
+                            const dataset = context.chart.data.datasets[0];
+                            const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+                            if (total === 0) return value;
+                            const pct = ((value / total) * 100).toFixed(1) + '%';
+                            return `${value} (${pct})`;
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grace: '18%',
+                        ticks: { precision: 0 }
+                    }
+                }
+            };
+        }
+
         function initCharts() {
             // 1. Chart Automatico
             new Chart(document.getElementById('chartAuto'), {
@@ -536,12 +617,7 @@ HTML_TEMPLATE = """
                         borderRadius: 6
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-                }
+                options: buildBarOptions('Validaciones')
             });
 
             // 2. Chart Exitoso
@@ -556,12 +632,7 @@ HTML_TEMPLATE = """
                         borderRadius: 6
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-                }
+                options: buildBarOptions('Validaciones')
             });
 
             // 3. Chart Tiempo
@@ -576,12 +647,7 @@ HTML_TEMPLATE = """
                         borderRadius: 6
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-                }
+                options: buildBarOptions('Validaciones')
             });
 
             // 4. Chart Experiencia
@@ -596,12 +662,7 @@ HTML_TEMPLATE = """
                         borderRadius: 6
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-                }
+                options: buildBarOptions('Técnicos')
             });
 
             // 5. Chart Ciudades
@@ -616,12 +677,7 @@ HTML_TEMPLATE = """
                         borderRadius: 6
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-                }
+                options: buildBarOptions('Validaciones')
             });
 
             // 6. Chart Aliados
@@ -636,12 +692,7 @@ HTML_TEMPLATE = """
                         borderRadius: 6
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-                }
+                options: buildBarOptions('Validaciones')
             });
 
             // 7. Chart Errores
@@ -656,12 +707,7 @@ HTML_TEMPLATE = """
                         borderRadius: 6
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-                }
+                options: buildBarOptions('Ocurrencias')
             });
         }
 
