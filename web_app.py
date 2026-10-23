@@ -421,15 +421,26 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <!-- Gráficos de Barras: Fila 4 -->
+                <!-- Gráficos Fila 4: Región (Dona) y Errores (Barras) -->
                 <div class="row g-4 mb-4">
-                    <div class="col-12">
+                    <div class="col-lg-6">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>7. Errores Presentados (Cuando no fue exitoso)</h6>
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-pie-chart-fill text-primary me-2"></i>7. Validaciones por Región</h6>
+                                <span class="badge bg-primary bg-opacity-10 text-primary">Dona / Región</span>
+                            </div>
+                            <div class="chart-container" style="position: relative; height: 280px;">
+                                <canvas id="chartRegiones"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="card card-stat p-3 bg-white h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>8. Errores Presentados (Cuando no fue exitoso)</h6>
                                 <span class="badge bg-danger bg-opacity-10 text-danger">Fallas Detectadas</span>
                             </div>
-                            <div class="chart-container" style="position: relative; height: 260px;">
+                            <div class="chart-container" style="position: relative; height: 280px;">
                                 <canvas id="chartErrores"></canvas>
                             </div>
                         </div>
@@ -532,6 +543,31 @@ HTML_TEMPLATE = """
                 id: 'customDataLabelsFallback',
                 afterDatasetsDraw(chart) {
                     const { ctx } = chart;
+                    if (chart.config.type === 'doughnut') {
+                        const meta = chart.getDatasetMeta(0);
+                        if (!meta.hidden) {
+                            const dataset = chart.data.datasets[0];
+                            const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+                            meta.data.forEach((element, index) => {
+                                const val = Number(dataset.data[index]);
+                                if (val > 0) {
+                                    const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '';
+                                    const label = `${val} (${pct})`;
+                                    const pos = element.tooltipPosition();
+                                    ctx.save();
+                                    ctx.font = 'bold 11px sans-serif';
+                                    ctx.fillStyle = '#ffffff';
+                                    ctx.textAlign = 'center';
+                                    ctx.textBaseline = 'middle';
+                                    ctx.shadowColor = 'rgba(0,0,0,0.7)';
+                                    ctx.shadowBlur = 4;
+                                    ctx.fillText(label, pos.x, pos.y);
+                                    ctx.restore();
+                                }
+                            });
+                        }
+                        return;
+                    }
                     chart.data.datasets.forEach((dataset, datasetIndex) => {
                         const meta = chart.getDatasetMeta(datasetIndex);
                         if (!meta.hidden) {
@@ -695,7 +731,93 @@ HTML_TEMPLATE = """
                 options: buildBarOptions('Validaciones')
             });
 
-            // 7. Chart Errores
+            // 7. Chart Regiones (Dona)
+            const coloresRegiones = [
+                '#da291c', '#0d6efd', '#198754', '#ffc107', 
+                '#6f42c1', '#fd7e14', '#20c997', '#0dcaf0'
+            ];
+            new Chart(document.getElementById('chartRegiones'), {
+                type: 'doughnut',
+                data: {
+                    labels: statsVias.regiones_labels.length ? statsVias.regiones_labels : ['Sin datos'],
+                    datasets: [{
+                        label: 'Validaciones',
+                        data: statsVias.regiones_values.length ? statsVias.regiones_values : [0],
+                        backgroundColor: coloresRegiones,
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'right',
+                            labels: {
+                                boxWidth: 14,
+                                padding: 10,
+                                font: {
+                                    size: 11,
+                                    family: "'Segoe UI', Tahoma, sans-serif"
+                                },
+                                generateLabels: function(chart) {
+                                    const data = chart.data;
+                                    if (data.labels.length && data.datasets.length) {
+                                        const dataset = data.datasets[0];
+                                        const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+                                        return data.labels.map((label, i) => {
+                                            const val = Number(dataset.data[i]) || 0;
+                                            const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
+                                            const fill = dataset.backgroundColor[i % dataset.backgroundColor.length];
+                                            return {
+                                                text: `${label}: ${val} (${pct})`,
+                                                fillStyle: fill,
+                                                strokeStyle: fill,
+                                                lineWidth: 1,
+                                                hidden: isNaN(dataset.data[i]) || (chart.getDatasetMeta(0).data[i] && chart.getDatasetMeta(0).data[i].hidden),
+                                                index: i
+                                            };
+                                        });
+                                    }
+                                    return [];
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const val = Number(context.raw) || 0;
+                                    const dataset = context.dataset;
+                                    const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+                                    const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
+                                    return ` ${context.label}: ${val} (${pct})`;
+                                }
+                            }
+                        },
+                        datalabels: {
+                            color: '#ffffff',
+                            font: {
+                                weight: 'bold',
+                                size: 11,
+                                family: "'Segoe UI', Tahoma, sans-serif"
+                            },
+                            formatter: function(value, context) {
+                                if (!value || value === 0) return '';
+                                const dataset = context.chart.data.datasets[0];
+                                const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+                                if (total === 0) return value;
+                                const pct = ((value / total) * 100).toFixed(1) + '%';
+                                return `${value} (${pct})`;
+                            }
+                        }
+                    },
+                    cutout: '55%'
+                }
+            });
+
+            // 8. Chart Errores
             new Chart(document.getElementById('chartErrores'), {
                 type: 'bar',
                 data: {

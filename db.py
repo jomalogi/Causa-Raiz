@@ -1004,6 +1004,8 @@ def get_estadisticas_vias():
             'ciudades_values': [],
             'aliados_labels': [],
             'aliados_values': [],
+            'regiones_labels': [],
+            'regiones_values': [],
             'errores_labels': [],
             'errores_values': []
         }
@@ -1056,7 +1058,12 @@ def get_estadisticas_vias():
         stats['aliados_labels'] = [a[0] for a in aliados]
         stats['aliados_values'] = [a[1] for a in aliados]
 
-        # 8. Errores presentados (cuando no fue exitoso)
+        # 8. Por Región
+        regiones = fetch_counts("SELECT region as label, COUNT(*) as cnt FROM validacion_cambio_vias_onnet WHERE region IS NOT NULL AND region != '' GROUP BY region ORDER BY cnt DESC")
+        stats['regiones_labels'] = [r[0] for r in regiones]
+        stats['regiones_values'] = [r[1] for r in regiones]
+
+        # 9. Errores presentados (cuando no fue exitoso)
         errores = fetch_counts("SELECT error_presentado as label, COUNT(*) as cnt FROM validacion_cambio_vias_onnet WHERE error_presentado IS NOT NULL AND error_presentado != '' AND error_presentado != 'N/A' GROUP BY error_presentado ORDER BY cnt DESC")
         stats['errores_labels'] = [e[0] for e in errores]
         stats['errores_values'] = [e[1] for e in errores]
