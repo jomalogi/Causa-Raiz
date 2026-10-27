@@ -717,7 +717,7 @@ HTML_TEMPLATE = """
                                 <div>
                                     <div class="text-muted small">% Cumplimiento (OK)</div>
                                     <h3 class="fw-bold mb-0 text-dark" id="kpiInvPctOk">{{ stats_inv.pct_ok }}%</h3>
-                                    <div class="text-muted small" style="font-size: 0.76rem;" id="kpiInvSubOk">{{ stats_inv.total_ok }} de {{ stats_inv.total_herramientas_eval }} eval.</div>
+                                    <div class="text-muted small" style="font-size: 0.76rem;" id="kpiInvSubOk">{{ stats_inv.total_ok }} OK de {{ stats_inv.total_herramientas_eval }} requeridas</div>
                                 </div>
                             </div>
                         </div>
@@ -914,7 +914,7 @@ HTML_TEMPLATE = """
                                                 </td>
                                                 <td class="text-nowrap">
                                                     <div class="mb-1">
-                                                        <span class="badge bg-dark me-1">📦 {{ (inv.herramientas_ok or 0) + (inv.herramientas_novedad or 0) }} en Inv.</span>
+                                                        <span class="badge bg-dark me-1">📊 Cumplimiento: {{ (((inv.herramientas_ok or 0) / 10) * 100) | round(0) | int }}% ({{ inv.herramientas_ok }}/10)</span>
                                                         <span class="badge bg-success me-1">✅ {{ inv.herramientas_ok }} OK</span>
                                                         <span class="badge bg-warning text-dark me-1">⚠️ {{ inv.herramientas_novedad }} Nov</span>
                                                         <span class="badge bg-danger">❌ {{ inv.herramientas_faltantes }} Falt</span>
@@ -1737,9 +1737,8 @@ HTML_TEMPLATE = """
                 });
             });
 
-            const totalEnInv = totalOk + totalNov;
-            const totalEval = totalOk + totalNov + totalFalt;
-            const pctOk = totalEval > 0 ? ((totalOk / totalEval) * 100).toFixed(1) : '0.0';
+            const totalRequeridas = Math.max(totalInv * HERRAMIENTAS_OFICIALES.length, totalOk + totalNov + totalFalt);
+            const pctOk = totalRequeridas > 0 ? ((totalOk / totalRequeridas) * 100).toFixed(1) : '0.0';
             const totalProp = totalPropTec + totalPropAli;
             const pctPropTec = totalProp > 0 ? ((totalPropTec / totalProp) * 100).toFixed(1) : '0.0';
             const pctPropAli = totalProp > 0 ? ((totalPropAli / totalProp) * 100).toFixed(1) : '0.0';
@@ -1750,7 +1749,7 @@ HTML_TEMPLATE = """
                 subAudEl.textContent = `${tecnicosUnicos} técnicos (${pctCobertura}% cobertura)`;
             }
             document.getElementById('kpiInvPctOk').textContent = `${pctOk}%`;
-            document.getElementById('kpiInvSubOk').textContent = `${totalEnInv} en inv. (${totalOk} OK / ${totalEval} eval.)`;
+            document.getElementById('kpiInvSubOk').textContent = `${totalOk} OK de ${totalRequeridas} requeridas`;
             document.getElementById('kpiInvPropiedad').textContent = `👷 ${totalPropTec} (${pctPropTec}%)`;
             document.getElementById('kpiInvSubPropiedad').textContent = `🤝 Aliado: ${totalPropAli} (${pctPropAli}%)`;
             document.getElementById('kpiInvNovedades').textContent = (totalNov + totalFalt);
@@ -1762,7 +1761,7 @@ HTML_TEMPLATE = """
             const hFalt = hLabels.map(h => mapTools[h].falt);
             const hPropTec = hLabels.map(h => mapTools[h].tec);
             const hPropAli = hLabels.map(h => mapTools[h].ali);
-            const hTotals = hLabels.map((_, i) => hOk[i] + hNov[i] + hFalt[i]);
+            const hTotals = hLabels.map((_, i) => Math.max(totalInv, hOk[i] + hNov[i] + hFalt[i]));
             const hPcts = hLabels.map((_, i) => hTotals[i] > 0 ? Number(((hOk[i] / hTotals[i]) * 100).toFixed(1)) : 0);
 
             // Actualizar Gráfico 1: Cumplimiento por Ítem

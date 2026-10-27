@@ -395,11 +395,15 @@ def view_inv_ficha_tecnico(chat_id, message_id=None):
             if pendientes_lines
             else "✅ _Todas las herramientas quedaron OK en este mes._\n"
         )
+        total_req_mes = len(HERRAMIENTAS_INVENTARIO)
+        ok_mes = int(inv_mes.get('herramientas_ok') or 0)
+        pct_mes = round((ok_mes / total_req_mes) * 100, 1) if total_req_mes > 0 else 0.0
         bloque_mes = (
             "📅 *INVENTARIO DEL MES EN CURSO YA REALIZADO*\n"
             f"• *Código:* `{inv_mes.get('codigo_auditoria')}`\n"
             f"• *Fecha:* {inv_mes.get('fecha_registro')}\n"
-            f"• *Estado:* ✅ {inv_mes.get('herramientas_ok', 0)} OK | "
+            f"• *Cumplimiento:* *{pct_mes}%* ({ok_mes}/{total_req_mes} herramientas requeridas en buen estado)\n"
+            f"• *Estado:* ✅ {ok_mes} OK | "
             f"⚠️ {inv_mes.get('herramientas_novedad', 0)} Nov | "
             f"❌ {inv_mes.get('herramientas_faltantes', 0)} Falt\n"
             f"{detalle_pend}"
@@ -608,7 +612,7 @@ def view_inv_herramienta(chat_id, idx, message_id=None):
     estado_previo = ""
     if actual:
         if actual['estado'] == 'FALTANTE':
-            estado_previo = "\n_(Actual: ❌ Faltante — no cuenta en inventario)_\n"
+            estado_previo = "\n_(Actual: ❌ Faltante / No disponible)_\n"
         else:
             st_lbl = "✅ OK" if actual['estado'] == 'OK' else f"⚠️ {actual.get('novedad')}"
             prop_lbl = actual.get('propiedad') or 'Sin definir'
@@ -757,6 +761,7 @@ def view_inv_resumen(chat_id, message_id=None):
     items_dict = session.get('inv_items') or {}
     es_actualizacion = bool(session.get('inv_update_id'))
 
+    total_requeridas = len(HERRAMIENTAS_INVENTARIO)
     ok_count = 0
     nov_count = 0
     falt_count = 0
@@ -800,16 +805,16 @@ def view_inv_resumen(chat_id, message_id=None):
         else "📋 *Resumen del inventario*"
     )
     btn_conf_label = "✅ Confirmar actualización de inventario" if es_actualizacion else "✅ Confirmar inventario"
-    herr_en_inv = ok_count + nov_count
+    pct_cumplimiento = round((ok_count / total_requeridas) * 100, 1) if total_requeridas > 0 else 0.0
 
     texto = (
         f"{titulo_res}\n\n"
         f"Técnico: {tec.get('nombre_tecnico', '')}\n"
         f"Fecha: {fecha_str}\n\n"
-        f"📦 {herr_en_inv} herramientas en inventario\n"
+        f"📊 *Cumplimiento:* *{pct_cumplimiento}%* ({ok_count}/{total_requeridas} herramientas requeridas en buen estado)\n"
         f"✅ {ok_count} herramientas OK\n"
         f"⚠️ {nov_count} herramientas con novedad\n"
-        f"❌ {falt_count} herramienta{'s' if falt_count != 1 else ''} faltante{'s' if falt_count != 1 else ''} _(no cuenta en inventario)_\n"
+        f"❌ {falt_count} herramienta{'s' if falt_count != 1 else ''} faltante{'s' if falt_count != 1 else ''}\n"
         f"👷 {prop_tec_count} propiedad del Técnico\n"
         f"🤝 {prop_ali_count} propiedad del Aliado\n"
         f"📸 {evidencias_count} evidencias cargadas\n\n"
@@ -898,6 +903,8 @@ def view_inv_confirmar_guardar(chat_id, from_user, message_id=None):
     session['inv_update_id'] = None
     session['inv_mes_existente'] = None
 
+    total_req = len(HERRAMIENTAS_INVENTARIO)
+    pct_cump = round((res['herramientas_ok'] / total_req) * 100, 1) if total_req > 0 else 0.0
     novedades_encontradas = res['herramientas_novedad'] + res['herramientas_faltantes']
     titulo_fin = (
         "✅ *Inventario actualizado correctamente*"
@@ -908,7 +915,9 @@ def view_inv_confirmar_guardar(chat_id, from_user, message_id=None):
     texto = (
         f"{titulo_fin}\n\n"
         f"Código: `{res['codigo_auditoria']}`\n\n"
-        f"Herramientas registradas: {res['total_herramientas']}\n"
+        f"📊 Cumplimiento: *{pct_cump}%* ({res['herramientas_ok']}/{total_req} herramientas en buen estado)\n"
+        f"Herramientas requeridas (lista completa): {total_req}\n"
+        f"Herramientas OK: {res['herramientas_ok']} | Con novedad: {res['herramientas_novedad']} | Faltantes: {res['herramientas_faltantes']}\n"
         f"Propiedad Técnico: {res.get('herramientas_tecnico', 0)} | Aliado: {res.get('herramientas_aliado', 0)}\n"
         f"Novedades encontradas: {novedades_encontradas}\n"
         f"Evidencias: {res['evidencias_cargadas']}\n\n"

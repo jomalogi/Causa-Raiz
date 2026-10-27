@@ -1606,8 +1606,8 @@ def actualizar_inventario_herramientas(inventario_id, datos_cabecera, lista_herr
             nov_count += 1
             lineas_nov.append(f"{item.get('herramienta')} ({item['propiedad']}): {item.get('novedad')}")
 
-    # Las herramientas faltantes no cuentan en el inventario
-    total_herramientas = (ok_count + nov_count) if lista_herramientas else int(datos_cabecera.get('total_herramientas', 10))
+    # El total de herramientas que debe tener el técnico es la lista completa (10)
+    total_herramientas = len(lista_herramientas) if lista_herramientas else int(datos_cabecera.get('total_herramientas', 10))
     resumen_novedades = " | ".join(lineas_nov) if lineas_nov else "Sin novedades"
 
     upsert_tecnico_inventario({
@@ -1794,8 +1794,8 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
             nov_count += 1
             lineas_nov.append(f"{item.get('herramienta')} ({item['propiedad']}): {item.get('novedad')}")
 
-    # Las herramientas faltantes no cuentan en el inventario
-    total_herramientas = (ok_count + nov_count) if lista_herramientas else int(datos_cabecera.get('total_herramientas', 10))
+    # El total de herramientas que debe tener el técnico es la lista completa (10)
+    total_herramientas = len(lista_herramientas) if lista_herramientas else int(datos_cabecera.get('total_herramientas', 10))
     resumen_novedades = " | ".join(lineas_nov) if lineas_nov else "Sin novedades"
 
     # Actualizar datos del técnico en base_tecnicos_inventario si fueron completados/corregidos
@@ -2012,9 +2012,11 @@ def get_inventarios_herramientas(limit=500, region=None, aliado=None, comunidad=
                     elif 'ALIADO' in p_up:
                         cnt_ali += 1
                 dets.append(dd)
+            total_req_inv = len(HERRAMIENTAS_OFICIALES)
             r['herramientas_tecnico'] = cnt_tec
             r['herramientas_aliado'] = cnt_ali
-            r['total_herramientas'] = (int(r.get('herramientas_ok') or 0) + int(r.get('herramientas_novedad') or 0))
+            r['total_herramientas'] = total_req_inv
+            r['pct_cumplimiento'] = round(((int(r.get('herramientas_ok') or 0)) / total_req_inv) * 100, 1) if total_req_inv > 0 else 0.0
             r['detalles'] = dets
             filtered_rows.append(r)
         return filtered_rows
@@ -2238,8 +2240,8 @@ def get_estadisticas_inventario():
         else:
             sum_ok, sum_nov, sum_fal, sum_evi, sum_tot = [int(x or 0) for x in row_sums]
 
-        sum_eval = sum_ok + sum_nov + sum_fal
-        stats['total_herramientas_eval'] = sum_ok + sum_nov
+        sum_eval = max(total_inventarios * len(HERRAMIENTAS_OFICIALES), sum_ok + sum_nov + sum_fal)
+        stats['total_herramientas_eval'] = sum_eval
         stats['total_ok'] = sum_ok
         stats['total_novedad'] = sum_nov
         stats['total_faltante'] = sum_fal
