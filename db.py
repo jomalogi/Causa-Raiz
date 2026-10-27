@@ -1277,6 +1277,7 @@ def cargar_tecnicos_inventario_excel(excel_path):
     try:
         if engine == "mysql":
             with conn.cursor() as cur:
+                cur.execute("DELETE FROM base_tecnicos_inventario")
                 sql = """
                     INSERT INTO base_tecnicos_inventario 
                     (cedula, nombre_tecnico, fecha_ingreso, antiguedad, aliado, region, area, comunidad, owner, q30)
@@ -1285,10 +1286,10 @@ def cargar_tecnicos_inventario_excel(excel_path):
                         nombre_tecnico = VALUES(nombre_tecnico),
                         fecha_ingreso = VALUES(fecha_ingreso),
                         antiguedad = VALUES(antiguedad),
-                        aliado = IF(VALUES(aliado) != '', VALUES(aliado), aliado),
-                        region = IF(VALUES(region) != '', VALUES(region), region),
-                        area = IF(VALUES(area) != '', VALUES(area), area),
-                        comunidad = IF(VALUES(comunidad) != '', VALUES(comunidad), comunidad),
+                        aliado = VALUES(aliado),
+                        region = VALUES(region),
+                        area = VALUES(area),
+                        comunidad = VALUES(comunidad),
                         owner = VALUES(owner),
                         q30 = VALUES(q30)
                 """
@@ -1298,6 +1299,7 @@ def cargar_tecnicos_inventario_excel(excel_path):
         else:
             with conn:
                 cur = conn.cursor()
+                cur.execute("DELETE FROM base_tecnicos_inventario")
                 sql = """
                     INSERT OR REPLACE INTO base_tecnicos_inventario
                     (cedula, nombre_tecnico, fecha_ingreso, antiguedad, aliado, region, area, comunidad, owner, q30)

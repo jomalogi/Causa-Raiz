@@ -42,7 +42,7 @@ def main():
     print("  -> Archivos transferidos exitosamente a /opt/bot_calidad/")
 
     print("\n[3/5] Inicializando nuevas tablas y cargando Base Nacional de Técnicos en MySQL...")
-    cmd_init = "cd /opt/bot_calidad && /opt/bot_calidad/venv/bin/python -c 'import db; db.init_db(); print(\"Total tecnicos en MySQL:\", db.get_estadisticas_inventario()[\"total_tecnicos_base\"])'"
+    cmd_init = "cd /opt/bot_calidad && /opt/bot_calidad/venv/bin/python -c 'import db; db.init_db(); db.cargar_tecnicos_inventario_excel(\"Base_Tecnicos_Inventario.xlsx\"); print(\"Total tecnicos en MySQL:\", db.get_estadisticas_inventario()[\"total_tecnicos_base\"])'"
     stdin, stdout, stderr = ssh.exec_command(cmd_init)
     out_init = stdout.read().decode()
     err_init = stderr.read().decode()
