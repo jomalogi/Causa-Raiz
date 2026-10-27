@@ -1569,7 +1569,6 @@ def actualizar_inventario_herramientas(inventario_id, datos_cabecera, lista_herr
     fecha_col = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=5))
     fecha_str = fecha_col.strftime('%Y-%m-%d %H:%M:%S')
 
-    total_herramientas = len(lista_herramientas) if lista_herramientas else int(datos_cabecera.get('total_herramientas', 10))
     ok_count = 0
     nov_count = 0
     falt_count = 0
@@ -1580,9 +1579,19 @@ def actualizar_inventario_herramientas(inventario_id, datos_cabecera, lista_herr
 
     for item in lista_herramientas:
         st = (item.get('estado') or 'OK').upper()
+        f_path = item.get('foto_path') or item.get('evidencia_path') or ''
+        if f_path:
+            evidencias_count += 1
+
+        if st == 'FALTANTE':
+            falt_count += 1
+            item['propiedad'] = 'N/A'
+            lineas_nov.append(f"{item.get('herramienta')}: no disponible")
+            continue
+
         prop_raw = (item.get('propiedad') or '').strip()
         prop_upper = prop_raw.upper()
-        if 'TECNICO' in prop_upper or 'TÉCNICO' in prop_upper:
+        if 'TECNICO' in prop_upper or 'TÉCNICO' in prop_upper or 'CNICO' in prop_upper:
             prop_tecnico_count += 1
             item['propiedad'] = 'Técnico'
         elif 'ALIADO' in prop_upper:
@@ -1591,18 +1600,14 @@ def actualizar_inventario_herramientas(inventario_id, datos_cabecera, lista_herr
         else:
             item['propiedad'] = prop_raw or 'No especificado'
 
-        f_path = item.get('foto_path') or item.get('evidencia_path') or ''
-        if f_path:
-            evidencias_count += 1
         if st == 'OK':
             ok_count += 1
         elif st == 'NOVEDAD':
             nov_count += 1
             lineas_nov.append(f"{item.get('herramienta')} ({item['propiedad']}): {item.get('novedad')}")
-        elif st == 'FALTANTE':
-            falt_count += 1
-            lineas_nov.append(f"{item.get('herramienta')} ({item['propiedad']}): no disponible")
 
+    # Las herramientas faltantes no cuentan en el inventario
+    total_herramientas = (ok_count + nov_count) if lista_herramientas else int(datos_cabecera.get('total_herramientas', 10))
     resumen_novedades = " | ".join(lineas_nov) if lineas_nov else "Sin novedades"
 
     upsert_tecnico_inventario({
@@ -1752,7 +1757,6 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
     ymd = fecha_col.strftime('%Y%m%d')
 
     # Calcular conteos automáticamente a partir de lista_herramientas
-    total_herramientas = len(lista_herramientas) if lista_herramientas else int(datos_cabecera.get('total_herramientas', 10))
     ok_count = 0
     nov_count = 0
     falt_count = 0
@@ -1763,9 +1767,19 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
 
     for item in lista_herramientas:
         st = (item.get('estado') or 'OK').upper()
+        f_path = item.get('foto_path') or item.get('evidencia_path') or ''
+        if f_path:
+            evidencias_count += 1
+
+        if st == 'FALTANTE':
+            falt_count += 1
+            item['propiedad'] = 'N/A'
+            lineas_nov.append(f"{item.get('herramienta')}: no disponible")
+            continue
+
         prop_raw = (item.get('propiedad') or '').strip()
         prop_upper = prop_raw.upper()
-        if 'TECNICO' in prop_upper or 'TÉCNICO' in prop_upper:
+        if 'TECNICO' in prop_upper or 'TÉCNICO' in prop_upper or 'CNICO' in prop_upper:
             prop_tecnico_count += 1
             item['propiedad'] = 'Técnico'
         elif 'ALIADO' in prop_upper:
@@ -1774,18 +1788,14 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
         else:
             item['propiedad'] = prop_raw or 'No especificado'
 
-        f_path = item.get('foto_path') or item.get('evidencia_path') or ''
-        if f_path:
-            evidencias_count += 1
         if st == 'OK':
             ok_count += 1
         elif st == 'NOVEDAD':
             nov_count += 1
             lineas_nov.append(f"{item.get('herramienta')} ({item['propiedad']}): {item.get('novedad')}")
-        elif st == 'FALTANTE':
-            falt_count += 1
-            lineas_nov.append(f"{item.get('herramienta')} ({item['propiedad']}): no disponible")
 
+    # Las herramientas faltantes no cuentan en el inventario
+    total_herramientas = (ok_count + nov_count) if lista_herramientas else int(datos_cabecera.get('total_herramientas', 10))
     resumen_novedades = " | ".join(lineas_nov) if lineas_nov else "Sin novedades"
 
     # Actualizar datos del técnico en base_tecnicos_inventario si fueron completados/corregidos
@@ -1991,17 +2001,20 @@ def get_inventarios_herramientas(limit=500, region=None, aliado=None, comunidad=
             for d in cur.fetchall():
                 dd = dict(d)
                 dd['foto_path'] = dd.get('evidencia_path') or ''
-                dd['propiedad'] = dd.get('propiedad') or 'No especificado'
-                p_up = dd['propiedad'].upper()
-                if 'TECNICO' in p_up or 'TÉCNICO' in p_up:
-                    cnt_tec += 1
-                elif 'ALIADO' in p_up:
-                    cnt_ali += 1
+                st_det = (dd.get('estado') or 'OK').upper()
+                if st_det == 'FALTANTE':
+                    dd['propiedad'] = 'N/A'
+                else:
+                    dd['propiedad'] = dd.get('propiedad') or 'No especificado'
+                    p_up = dd['propiedad'].upper()
+                    if 'TECNICO' in p_up or 'TÉCNICO' in p_up:
+                        cnt_tec += 1
+                    elif 'ALIADO' in p_up:
+                        cnt_ali += 1
                 dets.append(dd)
-            if not r.get('herramientas_tecnico') and cnt_tec > 0:
-                r['herramientas_tecnico'] = cnt_tec
-            if not r.get('herramientas_aliado') and cnt_ali > 0:
-                r['herramientas_aliado'] = cnt_ali
+            r['herramientas_tecnico'] = cnt_tec
+            r['herramientas_aliado'] = cnt_ali
+            r['total_herramientas'] = (int(r.get('herramientas_ok') or 0) + int(r.get('herramientas_novedad') or 0))
             r['detalles'] = dets
             filtered_rows.append(r)
         return filtered_rows
@@ -2059,6 +2072,9 @@ def get_inventarios_detalle_export(limit=20000, region=None, aliado=None, comuni
         if mes:
             mes_clean = mes.strip()[:7]
             rows = [r for r in rows if str(r.get('fecha_registro') or '')[:7] == mes_clean]
+        for r in rows:
+            if (r.get('estado') or '').upper() == 'FALTANTE':
+                r['propiedad'] = 'N/A'
         return rows
     finally:
         conn.close()
@@ -2222,13 +2238,14 @@ def get_estadisticas_inventario():
         else:
             sum_ok, sum_nov, sum_fal, sum_evi, sum_tot = [int(x or 0) for x in row_sums]
 
-        stats['total_herramientas_eval'] = sum_tot
+        sum_eval = sum_ok + sum_nov + sum_fal
+        stats['total_herramientas_eval'] = sum_ok + sum_nov
         stats['total_ok'] = sum_ok
         stats['total_novedad'] = sum_nov
         stats['total_faltante'] = sum_fal
         stats['total_faltantes'] = sum_fal
         stats['total_evidencias'] = sum_evi
-        stats['pct_ok'] = round((sum_ok / sum_tot) * 100, 1) if sum_tot > 0 else 0.0
+        stats['pct_ok'] = round((sum_ok / sum_eval) * 100, 1) if sum_eval > 0 else 0.0
         stats['estado_values'] = [sum_ok, sum_nov, sum_fal]
 
         # Cumplimiento y Propiedad detallados por cada una de las 10 herramientas
@@ -2249,12 +2266,14 @@ def get_estadisticas_inventario():
                 tool_map[h_name] = {'OK': 0, 'NOVEDAD': 0, 'FALTANTE': 0, 'TECNICO': 0, 'ALIADO': 0}
             if st_val in tool_map[h_name]:
                 tool_map[h_name][st_val] += cnt_val
-            if 'TECNICO' in pr_val or 'TÉCNICO' in pr_val:
-                tool_map[h_name]['TECNICO'] += cnt_val
-                total_prop_tec += cnt_val
-            elif 'ALIADO' in pr_val:
-                tool_map[h_name]['ALIADO'] += cnt_val
-                total_prop_ali += cnt_val
+            # Solo cuentan en propiedad las herramientas presentes en el inventario (OK o NOVEDAD)
+            if st_val != 'FALTANTE':
+                if 'TECNICO' in pr_val or 'TÉCNICO' in pr_val:
+                    tool_map[h_name]['TECNICO'] += cnt_val
+                    total_prop_tec += cnt_val
+                elif 'ALIADO' in pr_val:
+                    tool_map[h_name]['ALIADO'] += cnt_val
+                    total_prop_ali += cnt_val
 
         ok_arr, nov_arr, falt_arr, pct_arr, prop_tec_arr, prop_ali_arr = [], [], [], [], [], []
         for t in HERRAMIENTAS_OFICIALES:

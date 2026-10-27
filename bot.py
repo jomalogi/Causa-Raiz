@@ -315,11 +315,13 @@ def _cargar_inventario_mes_en_sesion(session, inv_mes):
     items_dict = {}
     for idx, tool_name in enumerate(HERRAMIENTAS_INVENTARIO):
         d = det_map.get(tool_name.upper(), {})
+        st_d = (d.get('estado') or 'OK').upper()
+        prop_d = 'N/A' if st_d == 'FALTANTE' else (d.get('propiedad') or 'Aliado')
         items_dict[idx] = {
             'herramienta': tool_name,
-            'estado': (d.get('estado') or 'OK').upper(),
-            'propiedad': d.get('propiedad') or 'Aliado',
-            'novedad': d.get('novedad') if (d.get('estado') or '').upper() in ('NOVEDAD', 'FALTANTE') else None,
+            'estado': st_d,
+            'propiedad': prop_d,
+            'novedad': d.get('novedad') if st_d in ('NOVEDAD', 'FALTANTE') else None,
             'foto_path': d.get('foto_path') or d.get('evidencia_path') or None
         }
     session['inv_items'] = items_dict
@@ -605,9 +607,12 @@ def view_inv_herramienta(chat_id, idx, message_id=None):
     actual = session.get('inv_items', {}).get(idx)
     estado_previo = ""
     if actual:
-        st_lbl = "✅ OK" if actual['estado'] == 'OK' else (f"⚠️ {actual.get('novedad')}" if actual['estado'] == 'NOVEDAD' else "❌ Faltante")
-        prop_lbl = actual.get('propiedad') or 'Sin definir'
-        estado_previo = f"\n_(Actual: {st_lbl} | Propiedad: {prop_lbl})_\n"
+        if actual['estado'] == 'FALTANTE':
+            estado_previo = "\n_(Actual: ❌ Faltante — no cuenta en inventario)_\n"
+        else:
+            st_lbl = "✅ OK" if actual['estado'] == 'OK' else f"⚠️ {actual.get('novedad')}"
+            prop_lbl = actual.get('propiedad') or 'Sin definir'
+            estado_previo = f"\n_(Actual: {st_lbl} | Propiedad: {prop_lbl})_\n"
 
     texto = (
         "🧰 *INVENTARIO DE HERRAMIENTAS*\n"
@@ -764,22 +769,26 @@ def view_inv_resumen(chat_id, message_id=None):
         it = items_dict.get(idx, {'herramienta': tool_name, 'estado': 'OK', 'propiedad': 'Aliado', 'novedad': None, 'foto_path': None})
         st = it.get('estado', 'OK')
         prop = it.get('propiedad') or 'Aliado'
-        if 'técnico' in prop.lower() or 'tecnico' in prop.lower():
-            prop_tec_count += 1
-        else:
-            prop_ali_count += 1
 
         if it.get('foto_path'):
             evidencias_count += 1
         if st == 'OK':
             ok_count += 1
+            if 'técnico' in prop.lower() or 'tecnico' in prop.lower():
+                prop_tec_count += 1
+            else:
+                prop_ali_count += 1
         elif st == 'NOVEDAD':
             nov_count += 1
+            if 'técnico' in prop.lower() or 'tecnico' in prop.lower():
+                prop_tec_count += 1
+            else:
+                prop_ali_count += 1
             nov_desc = (it.get('novedad') or 'deterioro').lower()
             lineas_novedades.append(f"⚠️ {tool_name} ({prop}): {nov_desc}")
         elif st == 'FALTANTE':
             falt_count += 1
-            lineas_novedades.append(f"❌ {tool_name} ({prop}): no disponible")
+            lineas_novedades.append(f"❌ {tool_name}: no disponible")
 
     now_col = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=5)
     fecha_str = now_col.strftime("%d/%m/%Y")
@@ -791,14 +800,16 @@ def view_inv_resumen(chat_id, message_id=None):
         else "📋 *Resumen del inventario*"
     )
     btn_conf_label = "✅ Confirmar actualización de inventario" if es_actualizacion else "✅ Confirmar inventario"
+    herr_en_inv = ok_count + nov_count
 
     texto = (
         f"{titulo_res}\n\n"
         f"Técnico: {tec.get('nombre_tecnico', '')}\n"
         f"Fecha: {fecha_str}\n\n"
+        f"📦 {herr_en_inv} herramientas en inventario\n"
         f"✅ {ok_count} herramientas OK\n"
         f"⚠️ {nov_count} herramientas con novedad\n"
-        f"❌ {falt_count} herramienta{'s' if falt_count != 1 else ''} faltante{'s' if falt_count != 1 else ''}\n"
+        f"❌ {falt_count} herramienta{'s' if falt_count != 1 else ''} faltante{'s' if falt_count != 1 else ''} _(no cuenta en inventario)_\n"
         f"👷 {prop_tec_count} propiedad del Técnico\n"
         f"🤝 {prop_ali_count} propiedad del Aliado\n"
         f"📸 {evidencias_count} evidencias cargadas\n\n"
@@ -837,7 +848,7 @@ def view_inv_menu_corregir(chat_id, message_id=None):
         it = items_dict.get(idx, {})
         st = it.get('estado', 'OK')
         prop = it.get('propiedad') or ''
-        prop_tag = f" [{prop}]" if prop else ""
+        prop_tag = f" [{prop}]" if (st != 'FALTANTE' and prop and prop not in ('N/A', 'No aplica')) else ""
         icon = "✅" if st == 'OK' else ("⚠️" if st == 'NOVEDAD' else "❌")
         extra_st = ""
         if st == 'NOVEDAD':
@@ -2024,11 +2035,30 @@ def handle_callback(update):
         estado = parts[2]
         tool_name = HERRAMIENTAS_INVENTARIO[idx]
         prev_item = session['inv_items'].get(idx, {})
+        if estado == "FALTANTE":
+            session['inv_items'][idx] = {
+                'herramienta': tool_name,
+                'estado': 'FALTANTE',
+                'propiedad': 'N/A',
+                'novedad': 'no disponible',
+                'foto_path': None
+            }
+            if session.get('inv_editing_from_summary') and (session.get('inv_foto_general') or session.get('inv_update_id')):
+                view_inv_resumen(chat_id, message_id)
+            elif idx + 1 < len(HERRAMIENTAS_INVENTARIO):
+                view_inv_herramienta(chat_id, idx + 1, message_id)
+            else:
+                view_inv_foto_general(chat_id, message_id)
+            return
+
+        prev_prop = prev_item.get('propiedad')
+        if not prev_prop or prev_prop in ('N/A', 'No aplica'):
+            prev_prop = 'Aliado'
         session['inv_items'][idx] = {
             'herramienta': tool_name,
             'estado': estado,
-            'propiedad': prev_item.get('propiedad') or 'Aliado',
-            'novedad': 'no disponible' if estado == "FALTANTE" else prev_item.get('novedad'),
+            'propiedad': prev_prop,
+            'novedad': prev_item.get('novedad') if estado == "NOVEDAD" else None,
             'foto_path': prev_item.get('foto_path') if estado == "NOVEDAD" else None
         }
         view_inv_propiedad(chat_id, idx, message_id)

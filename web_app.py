@@ -914,6 +914,7 @@ HTML_TEMPLATE = """
                                                 </td>
                                                 <td class="text-nowrap">
                                                     <div class="mb-1">
+                                                        <span class="badge bg-dark me-1">📦 {{ (inv.herramientas_ok or 0) + (inv.herramientas_novedad or 0) }} en Inv.</span>
                                                         <span class="badge bg-success me-1">✅ {{ inv.herramientas_ok }} OK</span>
                                                         <span class="badge bg-warning text-dark me-1">⚠️ {{ inv.herramientas_novedad }} Nov</span>
                                                         <span class="badge bg-danger">❌ {{ inv.herramientas_faltantes }} Falt</span>
@@ -939,7 +940,7 @@ HTML_TEMPLATE = """
                                                         {% elif d.estado == 'FALTANTE' %}
                                                             {% set ns.has_nov = true %}
                                                             <div class="mb-1">
-                                                                <span class="badge bg-danger">❌ {{ d.herramienta }} ({{ d.propiedad or 'N/A' }}): no disponible</span>
+                                                                <span class="badge bg-danger">❌ {{ d.herramienta }}: no disponible</span>
                                                             </div>
                                                         {% endif %}
                                                     {% endfor %}
@@ -1723,17 +1724,20 @@ HTML_TEMPLATE = """
                         mapTools[hName].falt++;
                     }
 
-                    const prop = String(d.propiedad || '').toUpperCase();
-                    if (prop.includes('TECNICO') || prop.includes('TÉCNICO')) {
-                        mapTools[hName].tec++;
-                        totalPropTec++;
-                    } else if (prop.includes('ALIADO')) {
-                        mapTools[hName].ali++;
-                        totalPropAli++;
+                    if (est !== 'FALTANTE') {
+                        const prop = String(d.propiedad || '').toUpperCase();
+                        if (prop.includes('TECNICO') || prop.includes('TÉCNICO')) {
+                            mapTools[hName].tec++;
+                            totalPropTec++;
+                        } else if (prop.includes('ALIADO')) {
+                            mapTools[hName].ali++;
+                            totalPropAli++;
+                        }
                     }
                 });
             });
 
+            const totalEnInv = totalOk + totalNov;
             const totalEval = totalOk + totalNov + totalFalt;
             const pctOk = totalEval > 0 ? ((totalOk / totalEval) * 100).toFixed(1) : '0.0';
             const totalProp = totalPropTec + totalPropAli;
@@ -1746,7 +1750,7 @@ HTML_TEMPLATE = """
                 subAudEl.textContent = `${tecnicosUnicos} técnicos (${pctCobertura}% cobertura)`;
             }
             document.getElementById('kpiInvPctOk').textContent = `${pctOk}%`;
-            document.getElementById('kpiInvSubOk').textContent = `${totalOk} de ${totalEval} eval.`;
+            document.getElementById('kpiInvSubOk').textContent = `${totalEnInv} en inv. (${totalOk} OK / ${totalEval} eval.)`;
             document.getElementById('kpiInvPropiedad').textContent = `👷 ${totalPropTec} (${pctPropTec}%)`;
             document.getElementById('kpiInvSubPropiedad').textContent = `🤝 Aliado: ${totalPropAli} (${pctPropAli}%)`;
             document.getElementById('kpiInvNovedades').textContent = (totalNov + totalFalt);
