@@ -670,9 +670,9 @@ HTML_TEMPLATE = """
                 </div>
 
                 <!-- KPIs Inventario -->
-                <div class="row g-3 mb-4">
-                    <div class="col-md-3">
-                        <div class="card card-stat p-3 bg-white">
+                <div class="row row-cols-1 row-cols-md-5 g-3 mb-4">
+                    <div class="col">
+                        <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex align-items-center">
                                 <div class="p-3 bg-secondary bg-opacity-10 text-secondary rounded-3 me-3 fs-3">
                                     <i class="bi bi-people-fill"></i>
@@ -680,13 +680,13 @@ HTML_TEMPLATE = """
                                 <div>
                                     <div class="text-muted small">Técnicos en Base</div>
                                     <h3 class="fw-bold mb-0 text-dark" id="kpiInvTecnicosBase">{{ "{:,}".format(stats_inv.total_tecnicos_base or 0) }}</h3>
-                                    <div class="text-muted small" style="font-size: 0.78rem;" id="kpiInvSubBase">Población según filtro</div>
+                                    <div class="text-muted small" style="font-size: 0.76rem;" id="kpiInvSubBase">Población según filtro</div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-3">
-                        <div class="card card-stat p-3 bg-white">
+                    <div class="col">
+                        <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex align-items-center">
                                 <div class="p-3 bg-primary bg-opacity-10 text-primary rounded-3 me-3 fs-3">
                                     <i class="bi bi-clipboard2-check-fill"></i>
@@ -694,13 +694,13 @@ HTML_TEMPLATE = """
                                 <div>
                                     <div class="text-muted small">Auditorías Registradas</div>
                                     <h3 class="fw-bold mb-0 text-dark" id="kpiInvAuditorias">{{ stats_inv.total_inventarios }}</h3>
-                                    <div class="text-muted small" style="font-size: 0.78rem;">Inventarios cerrados</div>
+                                    <div class="text-muted small" style="font-size: 0.76rem;">Inventarios cerrados</div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-3">
-                        <div class="card card-stat p-3 bg-white">
+                    <div class="col">
+                        <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex align-items-center">
                                 <div class="p-3 bg-success bg-opacity-10 text-success rounded-3 me-3 fs-3">
                                     <i class="bi bi-check-circle-fill"></i>
@@ -708,13 +708,27 @@ HTML_TEMPLATE = """
                                 <div>
                                     <div class="text-muted small">% Cumplimiento (OK)</div>
                                     <h3 class="fw-bold mb-0 text-dark" id="kpiInvPctOk">{{ stats_inv.pct_ok }}%</h3>
-                                    <div class="text-muted small" style="font-size: 0.78rem;" id="kpiInvSubOk">{{ stats_inv.total_ok }} de {{ stats_inv.total_herramientas_eval }} eval.</div>
+                                    <div class="text-muted small" style="font-size: 0.76rem;" id="kpiInvSubOk">{{ stats_inv.total_ok }} de {{ stats_inv.total_herramientas_eval }} eval.</div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-3">
-                        <div class="card card-stat p-3 bg-white">
+                    <div class="col">
+                        <div class="card card-stat p-3 bg-white h-100">
+                            <div class="d-flex align-items-center">
+                                <div class="p-3 bg-info bg-opacity-10 text-info rounded-3 me-3 fs-3">
+                                    <i class="bi bi-person-badge-fill"></i>
+                                </div>
+                                <div>
+                                    <div class="text-muted small">Propiedad Herramientas</div>
+                                    <h5 class="fw-bold mb-0 text-dark" id="kpiInvPropiedad">👷 {{ stats_inv.total_prop_tecnico }} ({{ stats_inv.pct_prop_tecnico }}%)</h5>
+                                    <div class="text-muted small" style="font-size: 0.76rem;" id="kpiInvSubPropiedad">🤝 Aliado: {{ stats_inv.total_prop_aliado }} ({{ stats_inv.pct_prop_aliado }}%)</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex align-items-center">
                                 <div class="p-3 bg-warning bg-opacity-10 text-warning rounded-3 me-3 fs-3">
                                     <i class="bi bi-camera-fill"></i>
@@ -722,7 +736,7 @@ HTML_TEMPLATE = """
                                 <div>
                                     <div class="text-muted small">Novedades / Faltantes</div>
                                     <h3 class="fw-bold mb-0 text-dark" id="kpiInvNovedades">{{ stats_inv.total_novedad + stats_inv.total_faltante }}</h3>
-                                    <div class="text-muted small" style="font-size: 0.78rem;" id="kpiInvSubFotos">📸 {{ stats_inv.total_evidencias }} fotos cargadas</div>
+                                    <div class="text-muted small" style="font-size: 0.76rem;" id="kpiInvSubFotos">📸 {{ stats_inv.total_evidencias }} fotos cargadas</div>
                                 </div>
                             </div>
                         </div>
@@ -755,12 +769,38 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <!-- Gráficos Inventario Fila 2: Diversificación (Dona + Área Polar + Pastel) -->
+                <!-- Gráficos Inventario Fila 2: Vista de Propiedad de Herramientas (Técnico vs Aliado) -->
+                <div class="row g-4 mb-4">
+                    <div class="col-lg-5">
+                        <div class="card card-stat p-3 bg-white h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-person-vcard-fill text-info me-2"></i>3. Propiedad Global (Técnico vs Aliado)</h6>
+                                <span class="badge bg-info bg-opacity-10 text-info">Dona · Cant y %</span>
+                            </div>
+                            <div class="chart-container" style="position: relative; height: 350px;">
+                                <canvas id="chartInvPropiedadGlobal"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-7">
+                        <div class="card card-stat p-3 bg-white h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-tags-fill text-primary me-2"></i>4. Propiedad por Ítem de Herramienta (👷 Técnico vs 🤝 Aliado)</h6>
+                                <span class="badge bg-primary bg-opacity-10 text-primary">Horizontales Apiladas · Cant y %</span>
+                            </div>
+                            <div class="chart-container" style="position: relative; height: 350px;">
+                                <canvas id="chartInvPropiedadItems"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gráficos Inventario Fila 3: Diversificación (Dona + Área Polar + Pastel) -->
                 <div class="row g-4 mb-4">
                     <div class="col-lg-4">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-pie-chart-fill text-success me-2"></i>3. Estado Global Herramientas</h6>
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-pie-chart-fill text-success me-2"></i>5. Estado Global Herramientas</h6>
                                 <span class="badge bg-success bg-opacity-10 text-success">Dona · Cant y %</span>
                             </div>
                             <div class="chart-container" style="position: relative; height: 280px;">
@@ -771,7 +811,7 @@ HTML_TEMPLATE = """
                     <div class="col-lg-4">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-bullseye text-warning me-2"></i>4. Tipos de Novedad</h6>
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-bullseye text-warning me-2"></i>6. Tipos de Novedad</h6>
                                 <span class="badge bg-warning bg-opacity-10 text-dark">Área Polar · Cant y %</span>
                             </div>
                             <div class="chart-container" style="position: relative; height: 280px;">
@@ -782,7 +822,7 @@ HTML_TEMPLATE = """
                     <div class="col-lg-4">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-compass-fill text-info me-2"></i>5. Inventarios por Zona</h6>
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-compass-fill text-info me-2"></i>7. Inventarios por Zona</h6>
                                 <span class="badge bg-info bg-opacity-10 text-info">Pastel · Cant y %</span>
                             </div>
                             <div class="chart-container" style="position: relative; height: 280px;">
@@ -792,12 +832,12 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <!-- Gráficos Inventario Fila 3: Región (Dona) y Aliados (Barras Horizontales) -->
+                <!-- Gráficos Inventario Fila 4: Región (Dona) y Aliados (Barras Horizontales) -->
                 <div class="row g-4 mb-4">
                     <div class="col-lg-6">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-globe-americas text-primary me-2"></i>6. Inventarios por Región</h6>
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-globe-americas text-primary me-2"></i>8. Inventarios por Región</h6>
                                 <span class="badge bg-primary bg-opacity-10 text-primary">Dona · Cant y %</span>
                             </div>
                             <div class="chart-container" style="position: relative; height: 280px;">
@@ -808,7 +848,7 @@ HTML_TEMPLATE = """
                     <div class="col-lg-6">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-building-fill-check text-danger me-2"></i>7. Auditorías de Inventario por Aliado</h6>
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-building-fill-check text-danger me-2"></i>9. Auditorías de Inventario por Aliado</h6>
                                 <span class="badge bg-danger bg-opacity-10 text-danger">Barras Horizontales · Cant y %</span>
                             </div>
                             <div class="chart-container" style="position: relative; height: 280px;">
@@ -823,7 +863,7 @@ HTML_TEMPLATE = """
                     <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center">
                         <div>
                             <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-list-check me-2 text-danger"></i>Auditorías de Inventario Registradas</h5>
-                            <p class="text-muted small mb-0">Detalle de inventarios cerrados con código de auditoría y evidencias fotográficas.</p>
+                            <p class="text-muted small mb-0">Detalle de inventarios cerrados con código de auditoría, propiedad de herramientas y evidencias fotográficas.</p>
                         </div>
                     </div>
                     <div class="card-body p-0">
@@ -836,7 +876,7 @@ HTML_TEMPLATE = """
                                         <th>Técnico</th>
                                         <th>Aliado</th>
                                         <th>Ciudad / Región / Zona</th>
-                                        <th>Resumen</th>
+                                        <th>Resumen Estado y Propiedad</th>
                                         <th>Detalle Novedades / Faltantes</th>
                                         <th>Foto General</th>
                                         <th>Supervisor</th>
@@ -863,17 +903,23 @@ HTML_TEMPLATE = """
                                                     {% if inv.area %}<span class="badge bg-secondary bg-opacity-10 text-secondary">{{ inv.area }}</span>{% endif %}
                                                 </td>
                                                 <td class="text-nowrap">
-                                                    <span class="badge bg-success me-1">✅ {{ inv.herramientas_ok }} OK</span>
-                                                    <span class="badge bg-warning text-dark me-1">⚠️ {{ inv.herramientas_novedad }} Nov</span>
-                                                    <span class="badge bg-danger">❌ {{ inv.herramientas_faltantes }} Falt</span>
+                                                    <div class="mb-1">
+                                                        <span class="badge bg-success me-1">✅ {{ inv.herramientas_ok }} OK</span>
+                                                        <span class="badge bg-warning text-dark me-1">⚠️ {{ inv.herramientas_novedad }} Nov</span>
+                                                        <span class="badge bg-danger">❌ {{ inv.herramientas_faltantes }} Falt</span>
+                                                    </div>
+                                                    <div>
+                                                        <span class="badge bg-info text-dark me-1">👷 Técnico: {{ inv.herramientas_tecnico or 0 }}</span>
+                                                        <span class="badge bg-primary">🤝 Aliado: {{ inv.herramientas_aliado or 0 }}</span>
+                                                    </div>
                                                 </td>
-                                                <td style="max-width: 280px;">
+                                                <td style="max-width: 300px;">
                                                     {% set ns = namespace(has_nov=false) %}
                                                     {% for d in inv.detalles %}
                                                         {% if d.estado == 'NOVEDAD' %}
                                                             {% set ns.has_nov = true %}
                                                             <div class="mb-1">
-                                                                <span class="badge bg-warning text-dark">⚠️ {{ d.herramienta }}: {{ d.novedad }}</span>
+                                                                <span class="badge bg-warning text-dark">⚠️ {{ d.herramienta }} ({{ d.propiedad or 'N/A' }}): {{ d.novedad }}</span>
                                                                 {% if d.foto_path %}
                                                                     <a href="/{{ d.foto_path }}" target="_blank" class="badge bg-primary text-decoration-none ms-1">
                                                                         <i class="bi bi-image"></i> Ver foto
@@ -883,7 +929,7 @@ HTML_TEMPLATE = """
                                                         {% elif d.estado == 'FALTANTE' %}
                                                             {% set ns.has_nov = true %}
                                                             <div class="mb-1">
-                                                                <span class="badge bg-danger">❌ {{ d.herramienta }}: no disponible</span>
+                                                                <span class="badge bg-danger">❌ {{ d.herramienta }} ({{ d.propiedad or 'N/A' }}): no disponible</span>
                                                             </div>
                                                         {% endif %}
                                                     {% endfor %}
@@ -1081,7 +1127,7 @@ HTML_TEMPLATE = """
             };
         }
 
-        // Opciones para Barras Horizontales Apiladas (OK vs Novedad vs Faltante por cada Herramienta)
+        // Opciones para Barras Horizontales Apiladas (con Cantidad y %)
         function buildStackedHorizontalBarOptions() {
             return {
                 indexAxis: 'y',
@@ -1370,7 +1416,7 @@ HTML_TEMPLATE = """
             });
 
             // =========================================================================
-            // PESTAÑA 3: INVENTARIO DE HERRAMIENTAS (Barras Horizontales por Ítem + Diversificados)
+            // PESTAÑA 3: INVENTARIO DE HERRAMIENTAS (Barras Horizontales por Ítem + Propiedad + Diversificados)
             // =========================================================================
             const hLabels = (statsInv.herramientas_labels && statsInv.herramientas_labels.length)
                 ? statsInv.herramientas_labels
@@ -1386,6 +1432,12 @@ HTML_TEMPLATE = """
                 : hLabels.map(() => 0);
             const hPcts = (statsInv.herramientas_pct_cumplimiento && statsInv.herramientas_pct_cumplimiento.length)
                 ? statsInv.herramientas_pct_cumplimiento
+                : hLabels.map(() => 0);
+            const hPropTec = (statsInv.herramientas_prop_tecnico_values && statsInv.herramientas_prop_tecnico_values.length)
+                ? statsInv.herramientas_prop_tecnico_values
+                : hLabels.map(() => 0);
+            const hPropAli = (statsInv.herramientas_prop_aliado_values && statsInv.herramientas_prop_aliado_values.length)
+                ? statsInv.herramientas_prop_aliado_values
                 : hLabels.map(() => 0);
             const hTotals = hLabels.map((_, idx) => (Number(hOk[idx]) || 0) + (Number(hNov[idx]) || 0) + (Number(hFalt[idx]) || 0));
 
@@ -1435,7 +1487,46 @@ HTML_TEMPLATE = """
                 options: buildStackedHorizontalBarOptions()
             });
 
-            // 3. Dona: Estado Global de Herramientas
+            // 3. Dona: Propiedad Global de Herramientas (Técnico vs Aliado)
+            chartsInv.propiedadGlobal = new Chart(document.getElementById('chartInvPropiedadGlobal'), {
+                type: 'doughnut',
+                data: {
+                    labels: statsInv.propiedad_labels || ['Propiedad del Técnico', 'Propiedad del Aliado'],
+                    datasets: [{
+                        label: 'Herramientas',
+                        data: statsInv.propiedad_values || [0, 0],
+                        backgroundColor: ['#0dcaf0', '#6610f2'],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: buildCircularOptions('doughnut')
+            });
+
+            // 4. Barras Horizontales Apiladas: Propiedad por cada Ítem de Herramienta (Técnico vs Aliado)
+            chartsInv.propiedadItems = new Chart(document.getElementById('chartInvPropiedadItems'), {
+                type: 'bar',
+                data: {
+                    labels: hLabels,
+                    datasets: [
+                        {
+                            label: '👷 Propiedad del Técnico',
+                            data: hPropTec,
+                            backgroundColor: '#0dcaf0',
+                            borderRadius: 4
+                        },
+                        {
+                            label: '🤝 Propiedad del Aliado',
+                            data: hPropAli,
+                            backgroundColor: '#6610f2',
+                            borderRadius: 4
+                        }
+                    ]
+                },
+                options: buildStackedHorizontalBarOptions()
+            });
+
+            // 5. Dona: Estado Global de Herramientas
             chartsInv.estado = new Chart(document.getElementById('chartInvEstado'), {
                 type: 'doughnut',
                 data: {
@@ -1451,7 +1542,7 @@ HTML_TEMPLATE = """
                 options: buildCircularOptions('doughnut')
             });
 
-            // 4. Área Polar: Tipos de Novedad Presentados
+            // 6. Área Polar: Tipos de Novedad Presentados
             chartsInv.novedades = new Chart(document.getElementById('chartInvNovedades'), {
                 type: 'polarArea',
                 data: {
@@ -1472,7 +1563,7 @@ HTML_TEMPLATE = """
                 options: buildCircularOptions('polarArea')
             });
 
-            // 5. Pastel (Pie): Inventarios por Zona / Área
+            // 7. Pastel (Pie): Inventarios por Zona / Área
             chartsInv.zonas = new Chart(document.getElementById('chartInvZonas'), {
                 type: 'pie',
                 data: {
@@ -1488,7 +1579,7 @@ HTML_TEMPLATE = """
                 options: buildCircularOptions('pie')
             });
 
-            // 6. Dona: Inventarios por Región
+            // 8. Dona: Inventarios por Región
             chartsInv.regiones = new Chart(document.getElementById('chartInvRegiones'), {
                 type: 'doughnut',
                 data: {
@@ -1504,7 +1595,7 @@ HTML_TEMPLATE = """
                 options: buildCircularOptions('doughnut')
             });
 
-            // 7. Barras Horizontales: Auditorías por Aliado
+            // 9. Barras Horizontales: Auditorías por Aliado
             chartsInv.aliados = new Chart(document.getElementById('chartInvAliados'), {
                 type: 'bar',
                 data: {
@@ -1576,27 +1667,13 @@ HTML_TEMPLATE = """
                     && (!ciudad || eqIgnoreCase(inv.comunidad, ciudad));
             });
 
-            // 3. Recalcular KPIs
+            // 3. Recalcular KPIs y métricas por cada una de las 10 herramientas
             const totalInv = invFiltrados.length;
             let totalOk = 0, totalNov = 0, totalFalt = 0, totalEvid = 0;
-            invFiltrados.forEach(inv => {
-                totalOk += Number(inv.herramientas_ok) || 0;
-                totalNov += Number(inv.herramientas_novedad) || 0;
-                totalFalt += Number(inv.herramientas_faltantes) || 0;
-                totalEvid += Number(inv.evidencias_cargadas) || 0;
-            });
-            const totalEval = totalOk + totalNov + totalFalt;
-            const pctOk = totalEval > 0 ? ((totalOk / totalEval) * 100).toFixed(1) : '0.0';
+            let totalPropTec = 0, totalPropAli = 0;
 
-            document.getElementById('kpiInvAuditorias').textContent = totalInv;
-            document.getElementById('kpiInvPctOk').textContent = `${pctOk}%`;
-            document.getElementById('kpiInvSubOk').textContent = `${totalOk} de ${totalEval} eval.`;
-            document.getElementById('kpiInvNovedades').textContent = (totalNov + totalFalt);
-            document.getElementById('kpiInvSubFotos').textContent = `📸 ${totalEvid} fotos cargadas`;
-
-            // 4. Recalcular métricas por cada una de las 10 herramientas
             const mapTools = {};
-            HERRAMIENTAS_OFICIALES.forEach(h => { mapTools[h] = { ok: 0, nov: 0, falt: 0 }; });
+            HERRAMIENTAS_OFICIALES.forEach(h => { mapTools[h] = { ok: 0, nov: 0, falt: 0, tec: 0, ali: 0 }; });
             const novMap = {
                 'No funciona': 0,
                 'Funciona parcialmente': 0,
@@ -1605,10 +1682,15 @@ HTML_TEMPLATE = """
             };
 
             invFiltrados.forEach(inv => {
+                totalOk += Number(inv.herramientas_ok) || 0;
+                totalNov += Number(inv.herramientas_novedad) || 0;
+                totalFalt += Number(inv.herramientas_faltantes) || 0;
+                totalEvid += Number(inv.evidencias_cargadas) || 0;
+
                 (inv.detalles || []).forEach(d => {
                     const hName = d.herramienta;
                     if (!mapTools[hName]) {
-                        mapTools[hName] = { ok: 0, nov: 0, falt: 0 };
+                        mapTools[hName] = { ok: 0, nov: 0, falt: 0, tec: 0, ali: 0 };
                     }
                     const est = String(d.estado || '').toUpperCase();
                     if (est === 'OK') mapTools[hName].ok++;
@@ -1622,13 +1704,38 @@ HTML_TEMPLATE = """
                     } else if (est === 'FALTANTE') {
                         mapTools[hName].falt++;
                     }
+
+                    const prop = String(d.propiedad || '').toUpperCase();
+                    if (prop.includes('TECNICO') || prop.includes('TÉCNICO')) {
+                        mapTools[hName].tec++;
+                        totalPropTec++;
+                    } else if (prop.includes('ALIADO')) {
+                        mapTools[hName].ali++;
+                        totalPropAli++;
+                    }
                 });
             });
+
+            const totalEval = totalOk + totalNov + totalFalt;
+            const pctOk = totalEval > 0 ? ((totalOk / totalEval) * 100).toFixed(1) : '0.0';
+            const totalProp = totalPropTec + totalPropAli;
+            const pctPropTec = totalProp > 0 ? ((totalPropTec / totalProp) * 100).toFixed(1) : '0.0';
+            const pctPropAli = totalProp > 0 ? ((totalPropAli / totalProp) * 100).toFixed(1) : '0.0';
+
+            document.getElementById('kpiInvAuditorias').textContent = totalInv;
+            document.getElementById('kpiInvPctOk').textContent = `${pctOk}%`;
+            document.getElementById('kpiInvSubOk').textContent = `${totalOk} de ${totalEval} eval.`;
+            document.getElementById('kpiInvPropiedad').textContent = `👷 ${totalPropTec} (${pctPropTec}%)`;
+            document.getElementById('kpiInvSubPropiedad').textContent = `🤝 Aliado: ${totalPropAli} (${pctPropAli}%)`;
+            document.getElementById('kpiInvNovedades').textContent = (totalNov + totalFalt);
+            document.getElementById('kpiInvSubFotos').textContent = `📸 ${totalEvid} fotos cargadas`;
 
             const hLabels = HERRAMIENTAS_OFICIALES;
             const hOk = hLabels.map(h => mapTools[h].ok);
             const hNov = hLabels.map(h => mapTools[h].nov);
             const hFalt = hLabels.map(h => mapTools[h].falt);
+            const hPropTec = hLabels.map(h => mapTools[h].tec);
+            const hPropAli = hLabels.map(h => mapTools[h].ali);
             const hTotals = hLabels.map((_, i) => hOk[i] + hNov[i] + hFalt[i]);
             const hPcts = hLabels.map((_, i) => hTotals[i] > 0 ? Number(((hOk[i] / hTotals[i]) * 100).toFixed(1)) : 0);
 
@@ -1647,11 +1754,21 @@ HTML_TEMPLATE = """
             chartsInv.desgloseItems.data.datasets[2].data = hFalt;
             chartsInv.desgloseItems.update();
 
-            // Actualizar Gráfico 3: Estado Global
+            // Actualizar Gráfico 3: Propiedad Global (Dona)
+            chartsInv.propiedadGlobal.data.datasets[0].data = [totalPropTec, totalPropAli];
+            chartsInv.propiedadGlobal.update();
+
+            // Actualizar Gráfico 4: Propiedad por Ítem (Barras Horizontales Apiladas)
+            chartsInv.propiedadItems.data.labels = hLabels;
+            chartsInv.propiedadItems.data.datasets[0].data = hPropTec;
+            chartsInv.propiedadItems.data.datasets[1].data = hPropAli;
+            chartsInv.propiedadItems.update();
+
+            // Actualizar Gráfico 5: Estado Global
             chartsInv.estado.data.datasets[0].data = [totalOk, totalNov, totalFalt];
             chartsInv.estado.update();
 
-            // Actualizar Gráfico 4: Novedades
+            // Actualizar Gráfico 6: Novedades
             chartsInv.novedades.data.datasets[0].data = [
                 novMap['No funciona'],
                 novMap['Funciona parcialmente'],
@@ -1689,7 +1806,7 @@ HTML_TEMPLATE = """
             chartsInv.aliados.data.datasets[0].data = grpAliados.values.slice(0, 10);
             chartsInv.aliados.update();
 
-            // 5. Filtrar filas de la tabla de inventarios
+            // Filtrar filas de la tabla de inventarios
             document.querySelectorAll('.fila-inventario').forEach(tr => {
                 const match = (!region || eqIgnoreCase(tr.dataset.region, region))
                            && (!zona || eqIgnoreCase(tr.dataset.zona, zona))

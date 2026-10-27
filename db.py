@@ -95,6 +95,16 @@ def init_db():
                     stmt = stmt.strip()
                     if stmt and not stmt.upper().startswith("USE "):
                         cur.execute(stmt)
+                # Migraciones automáticas en MySQL para columnas de propiedad
+                for alter_sql in [
+                    "ALTER TABLE inventarios_herramientas ADD COLUMN herramientas_tecnico INT NOT NULL DEFAULT 0",
+                    "ALTER TABLE inventarios_herramientas ADD COLUMN herramientas_aliado INT NOT NULL DEFAULT 0",
+                    "ALTER TABLE inventarios_herramientas_detalle ADD COLUMN propiedad VARCHAR(50) NULL DEFAULT 'No especificado'"
+                ]:
+                    try:
+                        cur.execute(alter_sql)
+                    except Exception:
+                        pass
             print("[DB] Tablas MySQL verificadas/creadas correctamente.")
         else:
             with conn:
@@ -228,6 +238,8 @@ def init_db():
                     herramientas_ok INTEGER DEFAULT 0,
                     herramientas_novedad INTEGER DEFAULT 0,
                     herramientas_faltantes INTEGER DEFAULT 0,
+                    herramientas_tecnico INTEGER DEFAULT 0,
+                    herramientas_aliado INTEGER DEFAULT 0,
                     total_evidencias INTEGER DEFAULT 0,
                     foto_general_path TEXT,
                     resumen_novedades TEXT,
@@ -241,6 +253,7 @@ def init_db():
                     codigo_auditoria TEXT NOT NULL,
                     herramienta TEXT NOT NULL,
                     estado TEXT NOT NULL,
+                    propiedad TEXT DEFAULT 'No especificado',
                     novedad TEXT,
                     evidencia_path TEXT
                 );
@@ -261,10 +274,16 @@ def init_db():
                         conn.execute(f"ALTER TABLE hallazgos_respuestas ADD COLUMN {col} TEXT;")
                     except Exception:
                         pass
-                try:
-                    conn.execute("ALTER TABLE validacion_cambio_vias_onnet ADD COLUMN error_presentado TEXT;")
-                except Exception:
-                    pass
+                for alter_sqlite in [
+                    "ALTER TABLE validacion_cambio_vias_onnet ADD COLUMN error_presentado TEXT;",
+                    "ALTER TABLE inventarios_herramientas ADD COLUMN herramientas_tecnico INTEGER DEFAULT 0;",
+                    "ALTER TABLE inventarios_herramientas ADD COLUMN herramientas_aliado INTEGER DEFAULT 0;",
+                    "ALTER TABLE inventarios_herramientas_detalle ADD COLUMN propiedad TEXT DEFAULT 'No especificado';"
+                ]:
+                    try:
+                        conn.execute(alter_sqlite)
+                    except Exception:
+                        pass
             print("[DB] Tablas SQLite inicializadas correctamente.")
     finally:
         conn.close()
@@ -1490,11 +1509,24 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
     ok_count = 0
     nov_count = 0
     falt_count = 0
+    prop_tecnico_count = 0
+    prop_aliado_count = 0
     evidencias_count = 1 if datos_cabecera.get('foto_general_path') else 0
     lineas_nov = []
 
     for item in lista_herramientas:
         st = (item.get('estado') or 'OK').upper()
+        prop_raw = (item.get('propiedad') or '').strip()
+        prop_upper = prop_raw.upper()
+        if 'TECNICO' in prop_upper or 'TÉCNICO' in prop_upper:
+            prop_tecnico_count += 1
+            item['propiedad'] = 'Técnico'
+        elif 'ALIADO' in prop_upper:
+            prop_aliado_count += 1
+            item['propiedad'] = 'Aliado'
+        else:
+            item['propiedad'] = prop_raw or 'No especificado'
+
         f_path = item.get('foto_path') or item.get('evidencia_path') or ''
         if f_path:
             evidencias_count += 1
@@ -1502,10 +1534,10 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
             ok_count += 1
         elif st == 'NOVEDAD':
             nov_count += 1
-            lineas_nov.append(f"{item.get('herramienta')}: {item.get('novedad')}")
+            lineas_nov.append(f"{item.get('herramienta')} ({item['propiedad']}): {item.get('novedad')}")
         elif st == 'FALTANTE':
             falt_count += 1
-            lineas_nov.append(f"{item.get('herramienta')}: no disponible")
+            lineas_nov.append(f"{item.get('herramienta')} ({item['propiedad']}): no disponible")
 
     resumen_novedades = " | ".join(lineas_nov) if lineas_nov else "Sin novedades"
 
@@ -1539,7 +1571,8 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
             'codigo_auditoria', 'fecha_registro', 'telegram_user_id', 'telegram_username',
             'telegram_nombre', 'cedula_tecnico', 'nombre_tecnico', 'aliado', 'region',
             'area', 'comunidad', 'total_herramientas', 'herramientas_ok',
-            'herramientas_novedad', 'herramientas_faltantes', 'total_evidencias',
+            'herramientas_novedad', 'herramientas_faltantes',
+            'herramientas_tecnico', 'herramientas_aliado', 'total_evidencias',
             'foto_general_path', 'resumen_novedades', 'observaciones'
         ]
         vals = [
@@ -1558,6 +1591,8 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
             ok_count,
             nov_count,
             falt_count,
+            prop_tecnico_count,
+            prop_aliado_count,
             evidencias_count,
             datos_cabecera.get('foto_general_path') or '',
             resumen_novedades,
@@ -1573,8 +1608,8 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
 
             sql_det = """
                 INSERT INTO inventarios_herramientas_detalle
-                (inventario_id, codigo_auditoria, herramienta, estado, novedad, evidencia_path)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                (inventario_id, codigo_auditoria, herramienta, estado, propiedad, novedad, evidencia_path)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
             det_rows = [
                 (
@@ -1582,6 +1617,7 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
                     codigo_auditoria,
                     item.get('herramienta', ''),
                     item.get('estado', 'OK'),
+                    item.get('propiedad') or 'No especificado',
                     item.get('novedad') or 'N/A',
                     item.get('foto_path') or item.get('evidencia_path') or ''
                 )
@@ -1599,8 +1635,8 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
 
                 sql_det = """
                     INSERT INTO inventarios_herramientas_detalle
-                    (inventario_id, codigo_auditoria, herramienta, estado, novedad, evidencia_path)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (inventario_id, codigo_auditoria, herramienta, estado, propiedad, novedad, evidencia_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """
                 det_rows = [
                     (
@@ -1608,6 +1644,7 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
                         codigo_auditoria,
                         item.get('herramienta', ''),
                         item.get('estado', 'OK'),
+                        item.get('propiedad') or 'No especificado',
                         item.get('novedad') or 'N/A',
                         item.get('foto_path') or item.get('evidencia_path') or ''
                     )
@@ -1624,6 +1661,8 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
             'herramientas_ok': ok_count,
             'herramientas_novedad': nov_count,
             'herramientas_faltantes': falt_count,
+            'herramientas_tecnico': prop_tecnico_count,
+            'herramientas_aliado': prop_aliado_count,
             'evidencias_cargadas': evidencias_count
         }
     finally:
@@ -1690,14 +1729,26 @@ def get_inventarios_herramientas(limit=500, region=None, aliado=None, comunidad=
                 continue
 
             cur.execute(
-                f"SELECT herramienta, estado, novedad, evidencia_path FROM inventarios_herramientas_detalle WHERE inventario_id = {placeholder} ORDER BY id ASC",
+                f"SELECT herramienta, estado, propiedad, novedad, evidencia_path FROM inventarios_herramientas_detalle WHERE inventario_id = {placeholder} ORDER BY id ASC",
                 (r['id'],)
             )
             dets = []
+            cnt_tec = 0
+            cnt_ali = 0
             for d in cur.fetchall():
                 dd = dict(d)
                 dd['foto_path'] = dd.get('evidencia_path') or ''
+                dd['propiedad'] = dd.get('propiedad') or 'No especificado'
+                p_up = dd['propiedad'].upper()
+                if 'TECNICO' in p_up or 'TÉCNICO' in p_up:
+                    cnt_tec += 1
+                elif 'ALIADO' in p_up:
+                    cnt_ali += 1
                 dets.append(dd)
+            if not r.get('herramientas_tecnico') and cnt_tec > 0:
+                r['herramientas_tecnico'] = cnt_tec
+            if not r.get('herramientas_aliado') and cnt_ali > 0:
+                r['herramientas_aliado'] = cnt_ali
             r['detalles'] = dets
             filtered_rows.append(r)
         return filtered_rows
@@ -1738,6 +1789,7 @@ def get_inventarios_detalle_export(limit=20000, region=None, aliado=None, comuni
                 i.comunidad as ciudad,
                 d.herramienta,
                 d.estado,
+                d.propiedad,
                 d.novedad,
                 d.evidencia_path,
                 i.foto_general_path,
@@ -1755,7 +1807,7 @@ def get_inventarios_detalle_export(limit=20000, region=None, aliado=None, comuni
         conn.close()
 
 def get_estadisticas_inventario():
-    """Retorna KPIs, catálogos de filtros (Región, Aliado, Ciudad, Zona), distribución territorial y cumplimiento por ítem de herramienta."""
+    """Retorna KPIs, catálogos de filtros (Región, Aliado, Ciudad, Zona), distribución territorial, propiedad y cumplimiento por ítem."""
     conn, engine = get_connection()
     try:
         cur = conn.cursor()
@@ -1815,7 +1867,7 @@ def get_estadisticas_inventario():
                 'cnt': cnt_v
             })
 
-        # También agregar cualquier valor presente en inventarios_herramientas o validaciones_vias
+        # También agregar cualquier valor presente en inventarios_herramientas
         try:
             cur.execute("SELECT DISTINCT region, area, aliado, comunidad FROM inventarios_herramientas")
             for row in cur.fetchall():
@@ -1835,10 +1887,16 @@ def get_estadisticas_inventario():
             'total_novedad': 0,
             'total_faltante': 0,
             'total_faltantes': 0,
+            'total_prop_tecnico': 0,
+            'total_prop_aliado': 0,
+            'pct_prop_tecnico': 0.0,
+            'pct_prop_aliado': 0.0,
             'total_evidencias': 0,
             'pct_ok': 0.0,
             'estado_labels': ['Herramientas OK', 'Con Novedad', 'Faltantes'],
             'estado_values': [0, 0, 0],
+            'propiedad_labels': ['Propiedad del Técnico', 'Propiedad del Aliado'],
+            'propiedad_values': [0, 0],
             'novedades_labels': ['No funciona', 'Funciona parcialmente', 'Deterioro físico', 'Falta accesorio'],
             'novedades_values': [0, 0, 0, 0],
             'herramientas_labels': list(HERRAMIENTAS_OFICIALES),
@@ -1846,6 +1904,8 @@ def get_estadisticas_inventario():
             'herramientas_nov_values': [0] * len(HERRAMIENTAS_OFICIALES),
             'herramientas_falt_values': [0] * len(HERRAMIENTAS_OFICIALES),
             'herramientas_pct_cumplimiento': [0.0] * len(HERRAMIENTAS_OFICIALES),
+            'herramientas_prop_tecnico_values': [0] * len(HERRAMIENTAS_OFICIALES),
+            'herramientas_prop_aliado_values': [0] * len(HERRAMIENTAS_OFICIALES),
             'top_tools_labels': [],
             'top_tools_values': [],
             'herramientas_nov_labels': [],
@@ -1896,23 +1956,32 @@ def get_estadisticas_inventario():
         stats['pct_ok'] = round((sum_ok / sum_tot) * 100, 1) if sum_tot > 0 else 0.0
         stats['estado_values'] = [sum_ok, sum_nov, sum_fal]
 
-        # Cumplimiento detallado por cada una de las 10 herramientas
+        # Cumplimiento y Propiedad detallados por cada una de las 10 herramientas
         cur.execute("""
-            SELECT herramienta, estado, COUNT(*) as cnt
+            SELECT herramienta, estado, COALESCE(propiedad, '') as propiedad, COUNT(*) as cnt
             FROM inventarios_herramientas_detalle
-            GROUP BY herramienta, estado
+            GROUP BY herramienta, estado, propiedad
         """)
-        tool_map = {t: {'OK': 0, 'NOVEDAD': 0, 'FALTANTE': 0} for t in HERRAMIENTAS_OFICIALES}
+        tool_map = {t: {'OK': 0, 'NOVEDAD': 0, 'FALTANTE': 0, 'TECNICO': 0, 'ALIADO': 0} for t in HERRAMIENTAS_OFICIALES}
+        total_prop_tec = 0
+        total_prop_ali = 0
         for r in cur.fetchall():
             h_name = (r['herramienta'] if engine == "mysql" else r[0]) or ''
             st_val = ((r['estado'] if engine == "mysql" else r[1]) or 'OK').upper()
-            cnt_val = int((r['cnt'] if engine == "mysql" else r[2]) or 0)
+            pr_val = ((r['propiedad'] if engine == "mysql" else r[2]) or '').upper()
+            cnt_val = int((r['cnt'] if engine == "mysql" else r[3]) or 0)
             if h_name not in tool_map:
-                tool_map[h_name] = {'OK': 0, 'NOVEDAD': 0, 'FALTANTE': 0}
+                tool_map[h_name] = {'OK': 0, 'NOVEDAD': 0, 'FALTANTE': 0, 'TECNICO': 0, 'ALIADO': 0}
             if st_val in tool_map[h_name]:
                 tool_map[h_name][st_val] += cnt_val
+            if 'TECNICO' in pr_val or 'TÉCNICO' in pr_val:
+                tool_map[h_name]['TECNICO'] += cnt_val
+                total_prop_tec += cnt_val
+            elif 'ALIADO' in pr_val:
+                tool_map[h_name]['ALIADO'] += cnt_val
+                total_prop_ali += cnt_val
 
-        ok_arr, nov_arr, falt_arr, pct_arr = [], [], [], []
+        ok_arr, nov_arr, falt_arr, pct_arr, prop_tec_arr, prop_ali_arr = [], [], [], [], [], []
         for t in HERRAMIENTAS_OFICIALES:
             c_ok = tool_map[t]['OK']
             c_nov = tool_map[t]['NOVEDAD']
@@ -1922,11 +1991,22 @@ def get_estadisticas_inventario():
             nov_arr.append(c_nov)
             falt_arr.append(c_fal)
             pct_arr.append(round((c_ok / c_tot) * 100, 1) if c_tot > 0 else 0.0)
+            prop_tec_arr.append(tool_map[t]['TECNICO'])
+            prop_ali_arr.append(tool_map[t]['ALIADO'])
 
         stats['herramientas_ok_values'] = ok_arr
         stats['herramientas_nov_values'] = nov_arr
         stats['herramientas_falt_values'] = falt_arr
         stats['herramientas_pct_cumplimiento'] = pct_arr
+        stats['herramientas_prop_tecnico_values'] = prop_tec_arr
+        stats['herramientas_prop_aliado_values'] = prop_ali_arr
+
+        tot_prop = total_prop_tec + total_prop_ali
+        stats['total_prop_tecnico'] = total_prop_tec
+        stats['total_prop_aliado'] = total_prop_ali
+        stats['pct_prop_tecnico'] = round((total_prop_tec / tot_prop) * 100, 1) if tot_prop > 0 else 0.0
+        stats['pct_prop_aliado'] = round((total_prop_ali / tot_prop) * 100, 1) if tot_prop > 0 else 0.0
+        stats['propiedad_values'] = [total_prop_tec, total_prop_ali]
 
         def fetch_counts(query):
             cur.execute(query)
