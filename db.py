@@ -1491,12 +1491,259 @@ def get_ciudades_inventario(region=None):
 
     return sorted(list(ciudades_map.values()))
 
+MESES_ES = {
+    '01': 'Enero', '02': 'Febrero', '03': 'Marzo', '04': 'Abril',
+    '05': 'Mayo', '06': 'Junio', '07': 'Julio', '08': 'Agosto',
+    '09': 'Septiembre', '10': 'Octubre', '11': 'Noviembre', '12': 'Diciembre'
+}
+
+def get_mes_actual_colombia():
+    """Retorna el mes en curso en Colombia en formato YYYY-MM (ej. '2026-10')."""
+    fecha_col = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=5)
+    return fecha_col.strftime('%Y-%m')
+
+def format_mes_label(ym):
+    """Convierte '2026-10' en 'Octubre 2026'."""
+    if not ym or len(str(ym)) < 7 or '-' not in str(ym):
+        return str(ym or '')
+    parts = str(ym)[:7].split('-')
+    return f"{MESES_ES.get(parts[1], parts[1])} {parts[0]}"
+
+def get_inventario_mes_actual(cedula, mes=None):
+    """
+    Verifica si el técnico (por cédula) ya tiene un inventario registrado en el mes en curso (YYYY-MM).
+    Si existe, retorna el diccionario del inventario con su lista 'detalles'; de lo contrario retorna None.
+    """
+    if not cedula:
+        return None
+    try:
+        cedula_int = int(str(cedula).strip())
+    except ValueError:
+        return None
+
+    target_mes = (mes or get_mes_actual_colombia()).strip()[:7]
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        placeholder = "%s" if engine == "mysql" else "?"
+        cur.execute(
+            f"SELECT * FROM inventarios_herramientas WHERE cedula_tecnico = {placeholder} ORDER BY id DESC",
+            (cedula_int,)
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        inv_match = None
+        for r in rows:
+            f_str = str(r.get('fecha_registro') or '')
+            if f_str[:7] == target_mes:
+                inv_match = r
+                inv_match['fecha_registro'] = f_str
+                inv_match['mes_registro'] = target_mes
+                break
+
+        if not inv_match:
+            return None
+
+        cur.execute(
+            f"SELECT herramienta, estado, propiedad, novedad, evidencia_path FROM inventarios_herramientas_detalle WHERE inventario_id = {placeholder} ORDER BY id ASC",
+            (inv_match['id'],)
+        )
+        dets = []
+        for d in cur.fetchall():
+            dd = dict(d)
+            dd['foto_path'] = dd.get('evidencia_path') or ''
+            dd['propiedad'] = dd.get('propiedad') or 'Aliado'
+            dets.append(dd)
+        inv_match['detalles'] = dets
+        return inv_match
+    finally:
+        conn.close()
+
+def actualizar_inventario_herramientas(inventario_id, datos_cabecera, lista_herramientas=None):
+    """
+    Actualiza un inventario existente del mes en curso (cuando el técnico ya tiene la herramienta
+    faltante o corregida), reemplazando sus ítems detalle y recalculando los conteos.
+    """
+    if lista_herramientas is None:
+        lista_herramientas = datos_cabecera.get('items', [])
+
+    fecha_col = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=5))
+    fecha_str = fecha_col.strftime('%Y-%m-%d %H:%M:%S')
+
+    total_herramientas = len(lista_herramientas) if lista_herramientas else int(datos_cabecera.get('total_herramientas', 10))
+    ok_count = 0
+    nov_count = 0
+    falt_count = 0
+    prop_tecnico_count = 0
+    prop_aliado_count = 0
+    evidencias_count = 1 if datos_cabecera.get('foto_general_path') else 0
+    lineas_nov = []
+
+    for item in lista_herramientas:
+        st = (item.get('estado') or 'OK').upper()
+        prop_raw = (item.get('propiedad') or '').strip()
+        prop_upper = prop_raw.upper()
+        if 'TECNICO' in prop_upper or 'TÉCNICO' in prop_upper:
+            prop_tecnico_count += 1
+            item['propiedad'] = 'Técnico'
+        elif 'ALIADO' in prop_upper:
+            prop_aliado_count += 1
+            item['propiedad'] = 'Aliado'
+        else:
+            item['propiedad'] = prop_raw or 'No especificado'
+
+        f_path = item.get('foto_path') or item.get('evidencia_path') or ''
+        if f_path:
+            evidencias_count += 1
+        if st == 'OK':
+            ok_count += 1
+        elif st == 'NOVEDAD':
+            nov_count += 1
+            lineas_nov.append(f"{item.get('herramienta')} ({item['propiedad']}): {item.get('novedad')}")
+        elif st == 'FALTANTE':
+            falt_count += 1
+            lineas_nov.append(f"{item.get('herramienta')} ({item['propiedad']}): no disponible")
+
+    resumen_novedades = " | ".join(lineas_nov) if lineas_nov else "Sin novedades"
+
+    upsert_tecnico_inventario({
+        'cedula': datos_cabecera.get('cedula_tecnico'),
+        'nombre_tecnico': datos_cabecera.get('nombre_tecnico', ''),
+        'aliado': datos_cabecera.get('aliado', ''),
+        'region': datos_cabecera.get('region', ''),
+        'area': datos_cabecera.get('area', ''),
+        'comunidad': datos_cabecera.get('comunidad', '')
+    })
+
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        placeholder = "%s" if engine == "mysql" else "?"
+        cur.execute(f"SELECT id, codigo_auditoria, foto_general_path FROM inventarios_herramientas WHERE id = {placeholder}", (int(inventario_id),))
+        row_ex = cur.fetchone()
+        if not row_ex:
+            conn.close()
+            return guardar_inventario_herramientas(datos_cabecera, lista_herramientas)
+
+        codigo_auditoria = row_ex['codigo_auditoria'] if engine == "mysql" else row_ex[1]
+        foto_gen_prev = row_ex['foto_general_path'] if engine == "mysql" else row_ex[2]
+        foto_gen_final = datos_cabecera.get('foto_general_path') or foto_gen_prev or ''
+
+        # Recalcular evidencias_count si se conservó foto_gen_prev
+        evidencias_count = (1 if foto_gen_final else 0) + sum(
+            1 for item in lista_herramientas if (item.get('foto_path') or item.get('evidencia_path'))
+        )
+
+        sql_upd = f"""
+            UPDATE inventarios_herramientas
+            SET fecha_registro = {placeholder},
+                telegram_user_id = {placeholder},
+                telegram_username = {placeholder},
+                telegram_nombre = {placeholder},
+                nombre_tecnico = {placeholder},
+                aliado = {placeholder},
+                region = {placeholder},
+                area = {placeholder},
+                comunidad = {placeholder},
+                total_herramientas = {placeholder},
+                herramientas_ok = {placeholder},
+                herramientas_novedad = {placeholder},
+                herramientas_faltantes = {placeholder},
+                herramientas_tecnico = {placeholder},
+                herramientas_aliado = {placeholder},
+                total_evidencias = {placeholder},
+                foto_general_path = {placeholder},
+                resumen_novedades = {placeholder},
+                observaciones = {placeholder}
+            WHERE id = {placeholder}
+        """
+        upd_vals = (
+            fecha_str,
+            datos_cabecera.get('telegram_user_id'),
+            datos_cabecera.get('telegram_username', ''),
+            datos_cabecera.get('telegram_nombre', ''),
+            datos_cabecera.get('nombre_tecnico', ''),
+            datos_cabecera.get('aliado', ''),
+            datos_cabecera.get('region', ''),
+            datos_cabecera.get('area', ''),
+            datos_cabecera.get('comunidad', ''),
+            total_herramientas,
+            ok_count,
+            nov_count,
+            falt_count,
+            prop_tecnico_count,
+            prop_aliado_count,
+            evidencias_count,
+            foto_gen_final,
+            resumen_novedades,
+            datos_cabecera.get('observaciones', 'Actualizado en el mes en curso'),
+            int(inventario_id)
+        )
+
+        det_rows = [
+            (
+                int(inventario_id),
+                codigo_auditoria,
+                item.get('herramienta', ''),
+                item.get('estado', 'OK'),
+                item.get('propiedad') or 'No especificado',
+                item.get('novedad') or 'N/A',
+                item.get('foto_path') or item.get('evidencia_path') or ''
+            )
+            for item in lista_herramientas
+        ]
+
+        if engine == "mysql":
+            cur.execute(sql_upd, upd_vals)
+            cur.execute("DELETE FROM inventarios_herramientas_detalle WHERE inventario_id = %s", (int(inventario_id),))
+            sql_det = """
+                INSERT INTO inventarios_herramientas_detalle
+                (inventario_id, codigo_auditoria, herramienta, estado, propiedad, novedad, evidencia_path)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            if det_rows:
+                cur.executemany(sql_det, det_rows)
+        else:
+            with conn:
+                cur.execute(sql_upd, upd_vals)
+                cur.execute("DELETE FROM inventarios_herramientas_detalle WHERE inventario_id = ?", (int(inventario_id),))
+                sql_det = """
+                    INSERT INTO inventarios_herramientas_detalle
+                    (inventario_id, codigo_auditoria, herramienta, estado, propiedad, novedad, evidencia_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """
+                if det_rows:
+                    cur.executemany(sql_det, det_rows)
+
+        print(f"[DB] Inventario actualizado: {codigo_auditoria} (ID #{inventario_id}) - Técnico {datos_cabecera.get('cedula_tecnico')}")
+        return {
+            'id': int(inventario_id),
+            'codigo_auditoria': codigo_auditoria,
+            'actualizado': True,
+            'total_herramientas': total_herramientas,
+            'herramientas_ok': ok_count,
+            'herramientas_novedad': nov_count,
+            'herramientas_faltantes': falt_count,
+            'herramientas_tecnico': prop_tecnico_count,
+            'herramientas_aliado': prop_aliado_count,
+            'evidencias_cargadas': evidencias_count
+        }
+    finally:
+        conn.close()
+
 def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
     """
     Guarda la auditoría completa de inventario de herramientas en inventarios_herramientas
     y sus 10 ítems en inventarios_herramientas_detalle.
+    Si datos_cabecera contiene 'inventario_id_actualizar', actualiza dicho registro del mes en curso.
     Retorna un diccionario con codigo_auditoria y conteos.
     """
+    if datos_cabecera.get('inventario_id_actualizar'):
+        return actualizar_inventario_herramientas(
+            datos_cabecera['inventario_id_actualizar'],
+            datos_cabecera,
+            lista_herramientas
+        )
+
     if lista_herramientas is None:
         lista_herramientas = datos_cabecera.get('items', [])
 
@@ -1657,6 +1904,7 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
         return {
             'id': inv_id,
             'codigo_auditoria': codigo_auditoria,
+            'actualizado': False,
             'total_herramientas': total_herramientas,
             'herramientas_ok': ok_count,
             'herramientas_novedad': nov_count,
@@ -1681,8 +1929,8 @@ HERRAMIENTAS_OFICIALES = [
     "Probador UTP"
 ]
 
-def get_inventarios_herramientas(limit=500, region=None, aliado=None, comunidad=None, area=None):
-    """Retorna la lista de auditorías de inventario más recientes incluyendo su lista de detalles y enriqueciendo Zona (area)."""
+def get_inventarios_herramientas(limit=500, region=None, aliado=None, comunidad=None, area=None, mes=None):
+    """Retorna la lista de auditorías de inventario más recientes incluyendo su lista de detalles y enriqueciendo Zona (area) y mes_registro."""
     conn, engine = get_connection()
     try:
         cur = conn.cursor()
@@ -1718,10 +1966,15 @@ def get_inventarios_herramientas(limit=500, region=None, aliado=None, comunidad=
         if not rows:
             return []
 
+        mes_clean = mes.strip()[:7] if mes else None
         filtered_rows = []
         for r in rows:
             if r.get('fecha_registro') is not None and not isinstance(r.get('fecha_registro'), str):
                 r['fecha_registro'] = str(r['fecha_registro'])
+            r['mes_registro'] = str(r.get('fecha_registro') or '')[:7]
+            if mes_clean and r['mes_registro'] != mes_clean:
+                continue
+
             com_up = (r.get('comunidad') or '').strip().upper()
             if not r.get('area'):
                 r['area'] = area_map.get(com_up, '')
@@ -1755,8 +2008,8 @@ def get_inventarios_herramientas(limit=500, region=None, aliado=None, comunidad=
     finally:
         conn.close()
 
-def get_inventarios_detalle_export(limit=20000, region=None, aliado=None, comunidad=None, area=None):
-    """Retorna el cruce de inventarios con su detalle por herramienta para exportar a Excel (con filtros opcionales)."""
+def get_inventarios_detalle_export(limit=20000, region=None, aliado=None, comunidad=None, area=None, mes=None):
+    """Retorna el cruce de inventarios con su detalle por herramienta para exportar a Excel (con filtros opcionales incluyendo mes)."""
     conn, engine = get_connection()
     try:
         cur = conn.cursor()
@@ -1802,12 +2055,16 @@ def get_inventarios_detalle_export(limit=20000, region=None, aliado=None, comuni
             LIMIT {int(limit)}
         """
         cur.execute(sql, tuple(params))
-        return [dict(r) for r in cur.fetchall()]
+        rows = [dict(r) for r in cur.fetchall()]
+        if mes:
+            mes_clean = mes.strip()[:7]
+            rows = [r for r in rows if str(r.get('fecha_registro') or '')[:7] == mes_clean]
+        return rows
     finally:
         conn.close()
 
 def get_estadisticas_inventario():
-    """Retorna KPIs, catálogos de filtros (Región, Aliado, Ciudad, Zona), distribución territorial, propiedad y cumplimiento por ítem."""
+    """Retorna KPIs, catálogos de filtros (Mes, Región, Aliado, Ciudad, Zona), distribución territorial, propiedad y cumplimiento por ítem."""
     conn, engine = get_connection()
     try:
         cur = conn.cursor()
@@ -1818,6 +2075,9 @@ def get_estadisticas_inventario():
         cur.execute("SELECT COUNT(*) as cnt FROM inventarios_herramientas")
         r_inv = cur.fetchone()
         total_inventarios = r_inv['cnt'] if engine == "mysql" else r_inv[0]
+
+        mes_actual = get_mes_actual_colombia()
+        meses_set = {mes_actual}
 
         # Agrupación territorial de técnicos para filtrado dinámico en el frontend
         cur.execute("""
@@ -1867,19 +2127,33 @@ def get_estadisticas_inventario():
                 'cnt': cnt_v
             })
 
-        # También agregar cualquier valor presente en inventarios_herramientas
+        # También agregar cualquier valor y mes presente en inventarios_herramientas
         try:
-            cur.execute("SELECT DISTINCT region, area, aliado, comunidad FROM inventarios_herramientas")
+            cur.execute("SELECT region, area, aliado, comunidad, fecha_registro FROM inventarios_herramientas")
             for row in cur.fetchall():
-                vals = [row['region'], row['area'], row['aliado'], row['comunidad']] if engine == "mysql" else [row[0], row[1], row[2], row[3]]
+                vals = [row['region'], row['area'], row['aliado'], row['comunidad'], row['fecha_registro']] if engine == "mysql" else [row[0], row[1], row[2], row[3], row[4]]
                 if vals[0]: regiones_set.add(vals[0].strip())
                 if vals[1]: zonas_set.add(vals[1].strip())
                 if vals[2]: aliados_set.add(vals[2].strip())
                 if vals[3]: ciudades_set.add(vals[3].strip())
+                if vals[4]:
+                    ym = str(vals[4]).strip()[:7]
+                    if len(ym) == 7 and '-' in ym:
+                        meses_set.add(ym)
         except Exception:
             pass
 
+        meses_catalogo = [
+            {
+                'value': m,
+                'label': f"{format_mes_label(m)} (Mes en curso)" if m == mes_actual else format_mes_label(m)
+            }
+            for m in sorted(list(meses_set), reverse=True)
+        ]
+
         stats = {
+            'mes_actual': mes_actual,
+            'mes_actual_label': format_mes_label(mes_actual),
             'total_tecnicos_base': total_tecnicos_base,
             'total_inventarios': total_inventarios,
             'total_herramientas_eval': 0,
@@ -1917,6 +2191,7 @@ def get_estadisticas_inventario():
             'aliados_labels': [],
             'aliados_values': [],
             'filtros': {
+                'meses': meses_catalogo,
                 'regiones': sorted(list(regiones_set)),
                 'zonas': sorted(list(zonas_set)),
                 'aliados': sorted(list(aliados_set)),
@@ -2069,5 +2344,6 @@ def get_estadisticas_inventario():
         return stats
     finally:
         conn.close()
+
 
 

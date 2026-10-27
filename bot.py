@@ -297,6 +297,33 @@ def view_seleccionar_modulo_region(chat_id, message_id=None):
 # Vistas del Módulo: Inventario de Herramientas
 # -------------------------------------------------------------
 
+def _cargar_inventario_mes_en_sesion(session, inv_mes):
+    """Pre-carga en la sesión los datos e ítems del inventario del mes en curso para permitir actualizar herramientas."""
+    if not inv_mes:
+        return
+    session['inv_update_id'] = inv_mes.get('id')
+    session['inv_update_codigo'] = inv_mes.get('codigo_auditoria', '')
+    session['inv_foto_general'] = inv_mes.get('foto_general_path') or ''
+    session['inv_editing_from_summary'] = True
+
+    det_map = {}
+    for d in (inv_mes.get('detalles') or []):
+        h_name = (d.get('herramienta') or '').strip()
+        if h_name:
+            det_map[h_name.upper()] = d
+
+    items_dict = {}
+    for idx, tool_name in enumerate(HERRAMIENTAS_INVENTARIO):
+        d = det_map.get(tool_name.upper(), {})
+        items_dict[idx] = {
+            'herramienta': tool_name,
+            'estado': (d.get('estado') or 'OK').upper(),
+            'propiedad': d.get('propiedad') or 'Aliado',
+            'novedad': d.get('novedad') if (d.get('estado') or '').upper() in ('NOVEDAD', 'FALTANTE') else None,
+            'foto_path': d.get('foto_path') or d.get('evidencia_path') or None
+        }
+    session['inv_items'] = items_dict
+
 def view_inv_pedir_cedula(chat_id, message_id=None):
     """Solicita el número de cédula del técnico para iniciar el inventario."""
     session = get_session(chat_id)
@@ -307,6 +334,9 @@ def view_inv_pedir_cedula(chat_id, message_id=None):
     session['inv_current_idx'] = 0
     session['inv_foto_general'] = None
     session['inv_editing_from_summary'] = False
+    session['inv_mes_existente'] = None
+    session['inv_update_id'] = None
+    session['inv_update_codigo'] = None
 
     texto = (
         "🧰 *INVENTARIO DE HERRAMIENTAS*\n"
@@ -321,7 +351,7 @@ def view_inv_pedir_cedula(chat_id, message_id=None):
     edit_message(chat_id, message_id, texto, markup)
 
 def view_inv_ficha_tecnico(chat_id, message_id=None):
-    """Muestra la información del técnico y permite actualizar Aliado, Ciudad, Región o Nombre si falta o está errado."""
+    """Muestra la información del técnico, verifica si ya tiene inventario en el mes en curso y permite actualizarlo."""
     session = get_session(chat_id)
     session['step'] = 'INV_FICHA_TECNICO'
     tec = session.get('inv_tecnico') or {}
@@ -332,6 +362,10 @@ def view_inv_ficha_tecnico(chat_id, message_id=None):
     region = tec.get('region', '')
     ciudad = tec.get('comunidad', '')
     area = tec.get('area', '')
+
+    if cedula and session.get('inv_mes_existente') is None:
+        session['inv_mes_existente'] = db.get_inventario_mes_actual(cedula)
+    inv_mes = session.get('inv_mes_existente')
 
     falta_nombre = _is_missing_val(nombre)
     falta_aliado = _is_missing_val(aliado)
@@ -345,11 +379,42 @@ def view_inv_ficha_tecnico(chat_id, message_id=None):
     ciudad_txt = ciudad if not falta_ciudad else "⚠️ _En blanco / Sin dato_"
     area_txt = area if not _is_missing_val(area) else "N/D"
 
+    bloque_mes = ""
+    if inv_mes:
+        pendientes_lines = []
+        for d in (inv_mes.get('detalles') or []):
+            st_d = (d.get('estado') or 'OK').upper()
+            if st_d == 'NOVEDAD':
+                pendientes_lines.append(f"  • ⚠️ {d.get('herramienta')}: {d.get('novedad')}")
+            elif st_d == 'FALTANTE':
+                pendientes_lines.append(f"  • ❌ {d.get('herramienta')}: Faltante / No disponible")
+        detalle_pend = (
+            "🔧 *Herramientas con novedad o faltantes:*\n" + "\n".join(pendientes_lines) + "\n"
+            if pendientes_lines
+            else "✅ _Todas las herramientas quedaron OK en este mes._\n"
+        )
+        bloque_mes = (
+            "📅 *INVENTARIO DEL MES EN CURSO YA REALIZADO*\n"
+            f"• *Código:* `{inv_mes.get('codigo_auditoria')}`\n"
+            f"• *Fecha:* {inv_mes.get('fecha_registro')}\n"
+            f"• *Estado:* ✅ {inv_mes.get('herramientas_ok', 0)} OK | "
+            f"⚠️ {inv_mes.get('herramientas_novedad', 0)} Nov | "
+            f"❌ {inv_mes.get('herramientas_faltantes', 0)} Falt\n"
+            f"{detalle_pend}"
+            "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        )
+
     aviso_estado = ""
     if not tec.get('en_base', True):
         aviso_estado = "ℹ️ _La cédula no estaba en la base inicial. Por favor completa los datos del técnico para registrarlo._\n\n"
     elif not datos_completos:
-        aviso_estado = "⚠️ *Algunos datos están en blanco o NA.* Por favor actualízalos antes de iniciar el inventario.\n\n"
+        aviso_estado = "⚠️ *Algunos datos están en blanco o NA.* Por favor actualízalos antes de continuar.\n\n"
+    elif inv_mes:
+        aviso_estado = (
+            "ℹ️ *Este técnico ya cuenta con inventario en el mes en curso.* "
+            "Puedes **Actualizar el inventario** si ya tiene la herramienta faltante o corregida, "
+            "o realizar uno nuevo.\n\n"
+        )
     else:
         aviso_estado = "✅ _Verifica los datos del técnico. Si alguno está errado puedes corregirlo o continuar al inventario._\n\n"
 
@@ -363,6 +428,7 @@ def view_inv_ficha_tecnico(chat_id, message_id=None):
         f"🏙️ *Ciudad:* {ciudad_txt}\n"
         f"📍 *Zona / Área:* {area_txt}\n"
         "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{bloque_mes}"
         f"{aviso_estado}"
     )
 
@@ -370,6 +436,9 @@ def view_inv_ficha_tecnico(chat_id, message_id=None):
     if datos_completos:
         if session.get('inv_editing_from_summary'):
             keyboard.append([{"text": "✅ Volver al Resumen del Inventario", "callback_data": "inv_act:resumen"}])
+        elif inv_mes:
+            keyboard.append([{"text": "🔄 Actualizar Inventario (Herramienta Faltante/Corregida)", "callback_data": "inv_act:update_mes"}])
+            keyboard.append([{"text": "🆕 Realizar Nuevo Inventario Completo", "callback_data": "inv_act:start_tools_new"}])
         else:
             keyboard.append([{"text": "▶️ Iniciar Inventario de Herramientas", "callback_data": "inv_act:start_tools"}])
 
@@ -681,6 +750,7 @@ def view_inv_resumen(chat_id, message_id=None):
 
     tec = session.get('inv_tecnico') or {}
     items_dict = session.get('inv_items') or {}
+    es_actualizacion = bool(session.get('inv_update_id'))
 
     ok_count = 0
     nov_count = 0
@@ -715,9 +785,15 @@ def view_inv_resumen(chat_id, message_id=None):
     fecha_str = now_col.strftime("%d/%m/%Y")
 
     bloque_novedades = "\n".join(lineas_novedades) if lineas_novedades else "✅ Sin novedades"
+    titulo_res = (
+        f"📋 *Resumen de actualización ({session.get('inv_update_codigo')})*"
+        if es_actualizacion
+        else "📋 *Resumen del inventario*"
+    )
+    btn_conf_label = "✅ Confirmar actualización de inventario" if es_actualizacion else "✅ Confirmar inventario"
 
     texto = (
-        "📋 *Resumen del inventario*\n\n"
+        f"{titulo_res}\n\n"
         f"Técnico: {tec.get('nombre_tecnico', '')}\n"
         f"Fecha: {fecha_str}\n\n"
         f"✅ {ok_count} herramientas OK\n"
@@ -731,22 +807,30 @@ def view_inv_resumen(chat_id, message_id=None):
     )
 
     keyboard = [
-        [{"text": "✅ Confirmar inventario", "callback_data": "inv_act:confirmar"}],
-        [{"text": "✏️ Corregir", "callback_data": "inv_act:corregir"}]
+        [{"text": btn_conf_label, "callback_data": "inv_act:confirmar"}],
+        [{"text": "✏️ Corregir / Actualizar otra herramienta", "callback_data": "inv_act:corregir"}]
     ]
     edit_message(chat_id, message_id, texto, {"inline_keyboard": keyboard})
 
 def view_inv_menu_corregir(chat_id, message_id=None):
-    """Permite elegir qué herramienta, foto general o dato del técnico corregir desde el resumen."""
+    """Permite elegir qué herramienta, foto general o dato del técnico corregir o actualizar."""
     session = get_session(chat_id)
     session['step'] = 'INV_CORREGIR'
     session['inv_editing_from_summary'] = True
     items_dict = session.get('inv_items') or {}
+    es_actualizacion = bool(session.get('inv_update_id'))
 
-    texto = (
-        "✏️ *CORREGIR INVENTARIO*\n\n"
-        "Selecciona la herramienta o sección que deseas modificar:"
-    )
+    if es_actualizacion:
+        texto = (
+            "🔄 *ACTUALIZAR INVENTARIO DEL MES*\n"
+            f"📋 *Código:* `{session.get('inv_update_codigo', '')}`\n\n"
+            "Selecciona la herramienta *faltante o corregida* para actualizar su estado:"
+        )
+    else:
+        texto = (
+            "✏️ *CORREGIR INVENTARIO*\n\n"
+            "Selecciona la herramienta o sección que deseas modificar:"
+        )
 
     keyboard = []
     for idx, tool_name in enumerate(HERRAMIENTAS_INVENTARIO):
@@ -755,16 +839,21 @@ def view_inv_menu_corregir(chat_id, message_id=None):
         prop = it.get('propiedad') or ''
         prop_tag = f" [{prop}]" if prop else ""
         icon = "✅" if st == 'OK' else ("⚠️" if st == 'NOVEDAD' else "❌")
-        keyboard.append([{"text": f"{icon} {idx + 1}. {tool_name}{prop_tag}", "callback_data": f"inv_tool:{idx}"}])
+        extra_st = ""
+        if st == 'NOVEDAD':
+            extra_st = f" - {it.get('novedad') or 'Con novedad'}"
+        elif st == 'FALTANTE':
+            extra_st = " - FALTANTE"
+        keyboard.append([{"text": f"{icon} {idx + 1}. {tool_name}{prop_tag}{extra_st}", "callback_data": f"inv_tool:{idx}"}])
 
     keyboard.append([{"text": "📸 Cambiar foto general", "callback_data": "inv_act:foto_general"}])
     keyboard.append([{"text": "👷 Corregir datos del técnico", "callback_data": "inv_act:ficha"}])
-    keyboard.append([{"text": "⬅️ Volver al Resumen", "callback_data": "inv_act:resumen"}])
+    keyboard.append([{"text": "✅ Ver Resumen y Confirmar", "callback_data": "inv_act:resumen"}])
 
     edit_message(chat_id, message_id, texto, {"inline_keyboard": keyboard})
 
 def view_inv_confirmar_guardar(chat_id, from_user, message_id=None):
-    """Guarda el inventario en la BD, genera el código de auditoría y muestra el mensaje final."""
+    """Guarda o actualiza el inventario en la BD, genera/mantiene el código de auditoría y muestra el mensaje final."""
     session = get_session(chat_id)
     tec = session.get('inv_tecnico') or {}
     items_dict = session.get('inv_items') or {}
@@ -779,6 +868,7 @@ def view_inv_confirmar_guardar(chat_id, from_user, message_id=None):
     username_sup = user_info.get('username', '')
 
     payload = {
+        'inventario_id_actualizar': session.get('inv_update_id'),
         'telegram_user_id': chat_id,
         'telegram_username': username_sup,
         'telegram_nombre': nombre_sup,
@@ -794,11 +884,18 @@ def view_inv_confirmar_guardar(chat_id, from_user, message_id=None):
 
     res = db.guardar_inventario_herramientas(payload)
     session['step'] = 'INV_DONE'
+    session['inv_update_id'] = None
+    session['inv_mes_existente'] = None
 
     novedades_encontradas = res['herramientas_novedad'] + res['herramientas_faltantes']
+    titulo_fin = (
+        "✅ *Inventario actualizado correctamente*"
+        if res.get('actualizado')
+        else "✅ *Inventario registrado correctamente*"
+    )
 
     texto = (
-        "✅ *Inventario registrado correctamente*\n\n"
+        f"{titulo_fin}\n\n"
         f"Código: `{res['codigo_auditoria']}`\n\n"
         f"Herramientas registradas: {res['total_herramientas']}\n"
         f"Propiedad Técnico: {res.get('herramientas_tecnico', 0)} | Aliado: {res.get('herramientas_aliado', 0)}\n"
@@ -1802,7 +1899,25 @@ def handle_callback(update):
         view_inv_ficha_tecnico(chat_id, message_id)
         return
 
-    if data == "inv_act:start_tools":
+    if data == "inv_act:update_mes":
+        tec = session.get('inv_tecnico') or {}
+        inv_mes = session.get('inv_mes_existente')
+        if not inv_mes and tec.get('cedula'):
+            inv_mes = db.get_inventario_mes_actual(tec.get('cedula'))
+            session['inv_mes_existente'] = inv_mes
+        if inv_mes:
+            _cargar_inventario_mes_en_sesion(session, inv_mes)
+            view_inv_menu_corregir(chat_id, message_id)
+        else:
+            session['inv_editing_from_summary'] = False
+            view_inv_herramienta(chat_id, 0, message_id)
+        return
+
+    if data in ("inv_act:start_tools", "inv_act:start_tools_new"):
+        session['inv_update_id'] = None
+        session['inv_update_codigo'] = None
+        session['inv_items'] = {}
+        session['inv_foto_general'] = None
         session['inv_editing_from_summary'] = False
         view_inv_herramienta(chat_id, 0, message_id)
         return
@@ -1932,7 +2047,7 @@ def handle_callback(update):
         if estado == "NOVEDAD":
             view_inv_novedad(chat_id, idx, message_id)
         else:
-            if session.get('inv_editing_from_summary') and session.get('inv_foto_general'):
+            if session.get('inv_editing_from_summary') and (session.get('inv_foto_general') or session.get('inv_update_id')):
                 view_inv_resumen(chat_id, message_id)
             elif idx + 1 < len(HERRAMIENTAS_INVENTARIO):
                 view_inv_herramienta(chat_id, idx + 1, message_id)
@@ -2213,6 +2328,9 @@ def handle_message(update):
                 'en_base': False
             }
         session['inv_tecnico'] = tec
+        session['inv_mes_existente'] = db.get_inventario_mes_actual(digits)
+        session['inv_update_id'] = None
+        session['inv_update_codigo'] = None
         view_inv_ficha_tecnico(chat_id)
         return
 
@@ -2259,7 +2377,7 @@ def handle_message(update):
         if idx in session['inv_items']:
             session['inv_items'][idx]['foto_path'] = foto_rel
 
-        if session.get('inv_editing_from_summary') and session.get('inv_foto_general'):
+        if session.get('inv_editing_from_summary') and (session.get('inv_foto_general') or session.get('inv_update_id')):
             view_inv_resumen(chat_id)
         elif idx + 1 < len(HERRAMIENTAS_INVENTARIO):
             view_inv_herramienta(chat_id, idx + 1)

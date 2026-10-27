@@ -618,19 +618,28 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <!-- Barra de Filtros Interactivos (Región, Zona, Aliado, Ciudad) -->
+                <!-- Barra de Filtros Interactivos (Mes, Región, Zona, Aliado, Ciudad) -->
                 <div class="card card-stat p-3 bg-white mb-4 border-0 shadow-sm">
                     <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
-                        <span class="fw-bold text-dark small"><i class="bi bi-funnel-fill text-danger me-1"></i>Filtros de Reporting (Región, Zona, Aliado, Ciudad)</span>
+                        <span class="fw-bold text-dark small"><i class="bi bi-funnel-fill text-danger me-1"></i>Filtros de Reporting (Mes, Región, Zona, Aliado, Ciudad)</span>
                         <div class="d-flex align-items-center gap-2">
-                            <span id="badgeFiltroInv" class="badge bg-secondary">Mostrando: Nacional (Todos)</span>
+                            <span id="badgeFiltroInv" class="badge bg-danger">Filtrado: Mes: {{ stats_inv.mes_actual_label }} (Mes en curso)</span>
                             <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="limpiarFiltrosInventario()">
                                 <i class="bi bi-x-circle me-1"></i>Limpiar Filtros
                             </button>
                         </div>
                     </div>
-                    <div class="row g-2">
-                        <div class="col-md-3">
+                    <div class="row row-cols-1 row-cols-md-5 g-2">
+                        <div class="col">
+                            <label class="form-label small text-muted mb-1 fw-semibold"><i class="bi bi-calendar-month text-danger me-1"></i>Mes</label>
+                            <select id="filtroInvMes" class="form-select form-select-sm border-danger" onchange="aplicarFiltrosInventario()">
+                                <option value="">Todos los Meses (Histórico)</option>
+                                {% for m in stats_inv.filtros.meses %}
+                                    <option value="{{ m.value }}" {% if m.value == stats_inv.mes_actual %}selected{% endif %}>{{ m.label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col">
                             <label class="form-label small text-muted mb-1 fw-semibold">Región</label>
                             <select id="filtroInvRegion" class="form-select form-select-sm" onchange="aplicarFiltrosInventario()">
                                 <option value="">Todas las Regiones</option>
@@ -639,7 +648,7 @@ HTML_TEMPLATE = """
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col">
                             <label class="form-label small text-muted mb-1 fw-semibold">Zona / Área</label>
                             <select id="filtroInvZona" class="form-select form-select-sm" onchange="aplicarFiltrosInventario()">
                                 <option value="">Todas las Zonas</option>
@@ -648,7 +657,7 @@ HTML_TEMPLATE = """
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col">
                             <label class="form-label small text-muted mb-1 fw-semibold">Aliado</label>
                             <select id="filtroInvAliado" class="form-select form-select-sm" onchange="aplicarFiltrosInventario()">
                                 <option value="">Todos los Aliados</option>
@@ -657,7 +666,7 @@ HTML_TEMPLATE = """
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col">
                             <label class="form-label small text-muted mb-1 fw-semibold">Ciudad</label>
                             <select id="filtroInvCiudad" class="form-select form-select-sm" onchange="aplicarFiltrosInventario()">
                                 <option value="">Todas las Ciudades</option>
@@ -694,7 +703,7 @@ HTML_TEMPLATE = """
                                 <div>
                                     <div class="text-muted small">Auditorías Registradas</div>
                                     <h3 class="fw-bold mb-0 text-dark" id="kpiInvAuditorias">{{ stats_inv.total_inventarios }}</h3>
-                                    <div class="text-muted small" style="font-size: 0.76rem;">Inventarios cerrados</div>
+                                    <div class="text-muted small" style="font-size: 0.76rem;" id="kpiInvSubAuditorias">Inventarios cerrados</div>
                                 </div>
                             </div>
                         </div>
@@ -886,6 +895,7 @@ HTML_TEMPLATE = """
                                     {% if inventarios %}
                                         {% for inv in inventarios %}
                                             <tr class="fila-inventario"
+                                                data-mes="{{ inv.mes_registro or (inv.fecha_registro or '')[:7] }}"
                                                 data-region="{{ inv.region or '' }}"
                                                 data-zona="{{ inv.area or '' }}"
                                                 data-aliado="{{ inv.aliado or '' }}"
@@ -1619,6 +1629,9 @@ HTML_TEMPLATE = """
         }
 
         function aplicarFiltrosInventario() {
+            const mesSelect = document.getElementById('filtroInvMes');
+            const mes = mesSelect ? mesSelect.value : '';
+            const mesLabel = (mesSelect && mesSelect.selectedIndex >= 0) ? mesSelect.options[mesSelect.selectedIndex].text : mes;
             const region = document.getElementById('filtroInvRegion').value;
             const zona = document.getElementById('filtroInvZona').value;
             const aliado = document.getElementById('filtroInvAliado').value;
@@ -1627,6 +1640,7 @@ HTML_TEMPLATE = """
             // Actualizar badge y link de descarga Excel
             const activos = [];
             const params = new URLSearchParams();
+            if (mes) { activos.push(`Mes: ${mesLabel}`); params.set('mes', mes); }
             if (region) { activos.push(`Región: ${region}`); params.set('region', region); }
             if (zona) { activos.push(`Zona: ${zona}`); params.set('zona', zona); }
             if (aliado) { activos.push(`Aliado: ${aliado}`); params.set('aliado', aliado); }
@@ -1638,7 +1652,7 @@ HTML_TEMPLATE = """
                 badge.textContent = 'Filtrado: ' + activos.join(' | ');
             } else {
                 badge.className = 'badge bg-secondary';
-                badge.textContent = 'Mostrando: Nacional (Todos)';
+                badge.textContent = 'Mostrando: Nacional (Todos los Meses)';
             }
 
             const btnExcel = document.getElementById('btnDescargarInvExcel');
@@ -1659,9 +1673,11 @@ HTML_TEMPLATE = """
             }
             document.getElementById('kpiInvTecnicosBase').textContent = totalTecnicosFiltrados.toLocaleString('es-CO');
 
-            // 2. Filtrar registros de inventario
+            // 2. Filtrar registros de inventario (incluyendo Mes)
             const invFiltrados = rawInventarios.filter(inv => {
-                return (!region || eqIgnoreCase(inv.region, region))
+                const invMes = String(inv.mes_registro || inv.fecha_registro || '').slice(0, 7);
+                return (!mes || invMes === mes)
+                    && (!region || eqIgnoreCase(inv.region, region))
                     && (!zona || eqIgnoreCase(inv.area, zona))
                     && (!aliado || eqIgnoreCase(inv.aliado, aliado))
                     && (!ciudad || eqIgnoreCase(inv.comunidad, ciudad));
@@ -1669,6 +1685,8 @@ HTML_TEMPLATE = """
 
             // 3. Recalcular KPIs y métricas por cada una de las 10 herramientas
             const totalInv = invFiltrados.length;
+            const tecnicosUnicos = new Set(invFiltrados.map(i => i.cedula_tecnico).filter(Boolean)).size;
+            const pctCobertura = totalTecnicosFiltrados > 0 ? ((tecnicosUnicos / totalTecnicosFiltrados) * 100).toFixed(1) : '0.0';
             let totalOk = 0, totalNov = 0, totalFalt = 0, totalEvid = 0;
             let totalPropTec = 0, totalPropAli = 0;
 
@@ -1685,7 +1703,7 @@ HTML_TEMPLATE = """
                 totalOk += Number(inv.herramientas_ok) || 0;
                 totalNov += Number(inv.herramientas_novedad) || 0;
                 totalFalt += Number(inv.herramientas_faltantes) || 0;
-                totalEvid += Number(inv.evidencias_cargadas) || 0;
+                totalEvid += Number(inv.evidencias_cargadas) || Number(inv.total_evidencias) || 0;
 
                 (inv.detalles || []).forEach(d => {
                     const hName = d.herramienta;
@@ -1723,6 +1741,10 @@ HTML_TEMPLATE = """
             const pctPropAli = totalProp > 0 ? ((totalPropAli / totalProp) * 100).toFixed(1) : '0.0';
 
             document.getElementById('kpiInvAuditorias').textContent = totalInv;
+            const subAudEl = document.getElementById('kpiInvSubAuditorias');
+            if (subAudEl) {
+                subAudEl.textContent = `${tecnicosUnicos} técnicos (${pctCobertura}% cobertura)`;
+            }
             document.getElementById('kpiInvPctOk').textContent = `${pctOk}%`;
             document.getElementById('kpiInvSubOk').textContent = `${totalOk} de ${totalEval} eval.`;
             document.getElementById('kpiInvPropiedad').textContent = `👷 ${totalPropTec} (${pctPropTec}%)`;
@@ -1808,7 +1830,8 @@ HTML_TEMPLATE = """
 
             // Filtrar filas de la tabla de inventarios
             document.querySelectorAll('.fila-inventario').forEach(tr => {
-                const match = (!region || eqIgnoreCase(tr.dataset.region, region))
+                const match = (!mes || tr.dataset.mes === mes)
+                           && (!region || eqIgnoreCase(tr.dataset.region, region))
                            && (!zona || eqIgnoreCase(tr.dataset.zona, zona))
                            && (!aliado || eqIgnoreCase(tr.dataset.aliado, aliado))
                            && (!ciudad || eqIgnoreCase(tr.dataset.ciudad, ciudad));
@@ -1817,6 +1840,10 @@ HTML_TEMPLATE = """
         }
 
         function limpiarFiltrosInventario() {
+            const mesSelect = document.getElementById('filtroInvMes');
+            if (mesSelect) {
+                mesSelect.value = statsInv.mes_actual || '';
+            }
             document.getElementById('filtroInvRegion').value = '';
             document.getElementById('filtroInvZona').value = '';
             document.getElementById('filtroInvAliado').value = '';
@@ -1957,6 +1984,7 @@ HTML_TEMPLATE = """
 
         document.addEventListener('DOMContentLoaded', () => {
             initCharts();
+            aplicarFiltrosInventario();
             ['tab-vias-onnet', 'tab-inventario'].forEach(tabId => {
                 const el = document.getElementById(tabId);
                 if (el) {
@@ -1978,7 +2006,7 @@ def index():
     stats_vias = db.get_estadisticas_vias()
     validaciones_vias = db.get_validaciones_vias(limit=500)
     stats_inv = db.get_estadisticas_inventario()
-    inventarios = db.get_inventarios_herramientas(limit=500)
+    inventarios = db.get_inventarios_herramientas(limit=2000)
     return render_template_string(
         HTML_TEMPLATE,
         stats=stats,
@@ -2106,6 +2134,7 @@ def descargar_validaciones_vias():
 
 @app.route("/descargar_inventarios")
 def descargar_inventarios():
+    mes = request.args.get("mes") or None
     region = request.args.get("region") or None
     aliado = request.args.get("aliado") or None
     ciudad = request.args.get("ciudad") or None
@@ -2116,7 +2145,8 @@ def descargar_inventarios():
         region=region,
         aliado=aliado,
         comunidad=ciudad,
-        area=zona
+        area=zona,
+        mes=mes
     )
     if not inventarios:
         flash("No hay inventarios registrados para los filtros seleccionados.", "info")
@@ -2132,7 +2162,8 @@ def descargar_inventarios():
         region=region,
         aliado=aliado,
         comunidad=ciudad,
-        area=zona
+        area=zona,
+        mes=mes
     )
 
     output = io.BytesIO()
