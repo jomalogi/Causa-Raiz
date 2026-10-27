@@ -285,14 +285,65 @@ HTML_TEMPLATE = """
             <!-- ======================================================== -->
             <div class="tab-pane fade" id="content-vias-onnet" role="tabpanel">
                 <!-- Header con botón de descarga -->
-                <div class="d-flex justify-content-between align-items-center mb-4 p-3 bg-white rounded-3 shadow-sm border-start border-4 border-danger">
+                <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-white rounded-3 shadow-sm border-start border-4 border-danger">
                     <div>
                         <h4 class="fw-bold mb-1 text-dark"><i class="bi bi-arrow-left-right text-danger me-2"></i>Validación de Cambio de Vías Onnet (Red Neutra)</h4>
                         <p class="text-muted small mb-0">Métricas de automatización, efectividad en campo y satisfacción técnica en el cambio de vías Onnet.</p>
                     </div>
-                    <a href="/descargar_validaciones_vias" class="btn btn-success btn-sm fw-bold px-3 py-2">
+                    <a href="/descargar_validaciones_vias" id="btnDescargarViasExcel" class="btn btn-success btn-sm fw-bold px-3 py-2">
                         <i class="bi bi-file-earmark-excel me-1"></i>Descargar Excel Validaciones
                     </a>
+                </div>
+
+                <!-- Barra de Filtros Interactivos (Región, Zona, Aliado, Ciudad) -->
+                <div class="card card-stat p-3 bg-white mb-4 border-0 shadow-sm">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+                        <span class="fw-bold text-dark small"><i class="bi bi-funnel-fill text-danger me-1"></i>Filtros de Reporting (Cambio de Vías Onnet)</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <span id="badgeFiltroVias" class="badge bg-secondary">Mostrando: Nacional (Todos)</span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="limpiarFiltrosVias()">
+                                <i class="bi bi-x-circle me-1"></i>Limpiar Filtros
+                            </button>
+                        </div>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted mb-1 fw-semibold">Región</label>
+                            <select id="filtroViasRegion" class="form-select form-select-sm" onchange="aplicarFiltrosVias()">
+                                <option value="">Todas las Regiones</option>
+                                {% for r in stats_inv.filtros.regiones %}
+                                    <option value="{{ r }}">{{ r }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted mb-1 fw-semibold">Zona / Área</label>
+                            <select id="filtroViasZona" class="form-select form-select-sm" onchange="aplicarFiltrosVias()">
+                                <option value="">Todas las Zonas</option>
+                                {% for z in stats_inv.filtros.zonas %}
+                                    <option value="{{ z }}">{{ z }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted mb-1 fw-semibold">Aliado</label>
+                            <select id="filtroViasAliado" class="form-select form-select-sm" onchange="aplicarFiltrosVias()">
+                                <option value="">Todos los Aliados</option>
+                                {% for a in stats_inv.filtros.aliados %}
+                                    <option value="{{ a }}">{{ a }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted mb-1 fw-semibold">Ciudad</label>
+                            <select id="filtroViasCiudad" class="form-select form-select-sm" onchange="aplicarFiltrosVias()">
+                                <option value="">Todas las Ciudades</option>
+                                {% for c in stats_inv.filtros.ciudades %}
+                                    <option value="{{ c }}">{{ c }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- KPIs de Vías Onnet -->
@@ -305,7 +356,7 @@ HTML_TEMPLATE = """
                                 </div>
                                 <div>
                                     <div class="text-muted small">Total Validaciones</div>
-                                    <h3 class="fw-bold mb-0 text-dark">{{ stats_vias.total }}</h3>
+                                    <h3 class="fw-bold mb-0 text-dark" id="kpiViasTotal">{{ stats_vias.total }}</h3>
                                 </div>
                             </div>
                         </div>
@@ -318,7 +369,7 @@ HTML_TEMPLATE = """
                                 </div>
                                 <div>
                                     <div class="text-muted small">% Cambio Automático</div>
-                                    <h3 class="fw-bold mb-0 text-dark">{{ stats_vias.pct_auto }}%</h3>
+                                    <h3 class="fw-bold mb-0 text-dark" id="kpiViasAuto">{{ stats_vias.pct_auto }}%</h3>
                                 </div>
                             </div>
                         </div>
@@ -331,7 +382,7 @@ HTML_TEMPLATE = """
                                 </div>
                                 <div>
                                     <div class="text-muted small">% Cambio Exitoso</div>
-                                    <h3 class="fw-bold mb-0 text-dark">{{ stats_vias.pct_exito }}%</h3>
+                                    <h3 class="fw-bold mb-0 text-dark" id="kpiViasExito">{{ stats_vias.pct_exito }}%</h3>
                                 </div>
                             </div>
                         </div>
@@ -344,22 +395,22 @@ HTML_TEMPLATE = """
                                 </div>
                                 <div>
                                     <div class="text-muted small">% Experiencia Positiva</div>
-                                    <h3 class="fw-bold mb-0 text-dark">{{ stats_vias.pct_exp_pos }}%</h3>
+                                    <h3 class="fw-bold mb-0 text-dark" id="kpiViasExp">{{ stats_vias.pct_exp_pos }}%</h3>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Gráficos de Barras: Fila 1 -->
+                <!-- Gráficos Diversificados: Fila 1 (Dona + Pastel) -->
                 <div class="row g-4 mb-4">
                     <div class="col-lg-6">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-bar-chart-fill text-danger me-2"></i>1. ¿Cambio de Vías Automático?</h6>
-                                <span class="badge bg-light text-dark">Pregunta 2</span>
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-pie-chart-fill text-danger me-2"></i>1. ¿Cambio de Vías Automático?</h6>
+                                <span class="badge bg-danger bg-opacity-10 text-danger">Dona · Cant y %</span>
                             </div>
-                            <div class="chart-container">
+                            <div class="chart-container" style="position: relative; height: 270px;">
                                 <canvas id="chartAuto"></canvas>
                             </div>
                         </div>
@@ -367,25 +418,25 @@ HTML_TEMPLATE = """
                     <div class="col-lg-6">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-bar-chart-fill text-success me-2"></i>2. ¿Cambio de Vías Exitoso?</h6>
-                                <span class="badge bg-light text-dark">Pregunta 3</span>
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-check-circle-fill text-success me-2"></i>2. ¿Cambio de Vías Exitoso?</h6>
+                                <span class="badge bg-success bg-opacity-10 text-success">Pastel · Cant y %</span>
                             </div>
-                            <div class="chart-container">
+                            <div class="chart-container" style="position: relative; height: 270px;">
                                 <canvas id="chartExito"></canvas>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Gráficos de Barras: Fila 2 -->
+                <!-- Gráficos Diversificados: Fila 2 (Barras Horizontales + Dona) -->
                 <div class="row g-4 mb-4">
                     <div class="col-lg-6">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h6 class="fw-bold text-dark mb-0"><i class="bi bi-clock-history text-primary me-2"></i>3. Tiempo de Duración</h6>
-                                <span class="badge bg-light text-dark">Pregunta 4</span>
+                                <span class="badge bg-primary bg-opacity-10 text-primary">Barras Horizontales · Cant y %</span>
                             </div>
-                            <div class="chart-container">
+                            <div class="chart-container" style="position: relative; height: 270px;">
                                 <canvas id="chartTiempo"></canvas>
                             </div>
                         </div>
@@ -394,24 +445,24 @@ HTML_TEMPLATE = """
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h6 class="fw-bold text-dark mb-0"><i class="bi bi-hand-thumbs-up-fill text-info me-2"></i>4. Experiencia del Técnico</h6>
-                                <span class="badge bg-light text-dark">Pregunta 5</span>
+                                <span class="badge bg-info bg-opacity-10 text-info">Dona · Cant y %</span>
                             </div>
-                            <div class="chart-container">
+                            <div class="chart-container" style="position: relative; height: 270px;">
                                 <canvas id="chartExp"></canvas>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Gráficos de Barras: Fila 3 -->
+                <!-- Gráficos Diversificados: Fila 3 (Barras Horizontales Ciudades y Aliados) -->
                 <div class="row g-4 mb-4">
                     <div class="col-lg-6">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h6 class="fw-bold text-dark mb-0"><i class="bi bi-geo-alt-fill text-danger me-2"></i>5. Validaciones por Ciudad (Top 8)</h6>
-                                <span class="badge bg-light text-dark">Distribución</span>
+                                <span class="badge bg-danger bg-opacity-10 text-danger">Barras Horizontales · Cant y %</span>
                             </div>
-                            <div class="chart-container">
+                            <div class="chart-container" style="position: relative; height: 280px;">
                                 <canvas id="chartCiudades"></canvas>
                             </div>
                         </div>
@@ -420,22 +471,22 @@ HTML_TEMPLATE = """
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h6 class="fw-bold text-dark mb-0"><i class="bi bi-people-fill text-warning me-2"></i>6. Validaciones por Aliado</h6>
-                                <span class="badge bg-light text-dark">Distribución</span>
+                                <span class="badge bg-warning bg-opacity-10 text-dark">Barras Horizontales · Cant y %</span>
                             </div>
-                            <div class="chart-container">
+                            <div class="chart-container" style="position: relative; height: 280px;">
                                 <canvas id="chartAliados"></canvas>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Gráficos Fila 4: Región (Dona) y Errores (Barras) -->
+                <!-- Gráficos Fila 4: Región (Dona) y Errores (Área Polar) -->
                 <div class="row g-4 mb-4">
                     <div class="col-lg-6">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h6 class="fw-bold text-dark mb-0"><i class="bi bi-pie-chart-fill text-primary me-2"></i>7. Validaciones por Región</h6>
-                                <span class="badge bg-primary bg-opacity-10 text-primary">Dona / Región</span>
+                                <span class="badge bg-primary bg-opacity-10 text-primary">Dona · Cant y %</span>
                             </div>
                             <div class="chart-container" style="position: relative; height: 280px;">
                                 <canvas id="chartRegiones"></canvas>
@@ -446,7 +497,7 @@ HTML_TEMPLATE = """
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h6 class="fw-bold text-dark mb-0"><i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>8. Errores Presentados (Cuando no fue exitoso)</h6>
-                                <span class="badge bg-danger bg-opacity-10 text-danger">Fallas Detectadas</span>
+                                <span class="badge bg-danger bg-opacity-10 text-danger">Área Polar · Cant y %</span>
                             </div>
                             <div class="chart-container" style="position: relative; height: 280px;">
                                 <canvas id="chartErrores"></canvas>
@@ -470,7 +521,7 @@ HTML_TEMPLATE = """
                                     <tr>
                                         <th>Fecha</th>
                                         <th>Cuenta</th>
-                                        <th>Ciudad</th>
+                                        <th>Ciudad / Zona</th>
                                         <th>Aliado</th>
                                         <th>Segmento</th>
                                         <th>¿Automático?</th>
@@ -481,13 +532,21 @@ HTML_TEMPLATE = """
                                         <th>Supervisor</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="tablaViasBody">
                                     {% if validaciones_vias %}
                                         {% for v in validaciones_vias %}
-                                            <tr>
+                                            <tr class="fila-vias"
+                                                data-region="{{ v.region or '' }}"
+                                                data-zona="{{ v.area or '' }}"
+                                                data-aliado="{{ v.aliado or '' }}"
+                                                data-ciudad="{{ v.comunidad or '' }}">
                                                 <td class="text-nowrap">{{ v.fecha_registro }}</td>
                                                 <td><span class="badge bg-secondary">{{ v.cuenta }}</span></td>
-                                                <td>{{ v.comunidad }} <br><span class="badge bg-light text-dark">{{ v.region }}</span></td>
+                                                <td>
+                                                    {{ v.comunidad }} <br>
+                                                    <span class="badge bg-light text-dark border">{{ v.region }}</span>
+                                                    {% if v.area %}<span class="badge bg-secondary bg-opacity-10 text-secondary">{{ v.area }}</span>{% endif %}
+                                                </td>
                                                 <td>{{ v.aliado }}</td>
                                                 <td>{{ v.segmento }}</td>
                                                 <td>
@@ -541,10 +600,10 @@ HTML_TEMPLATE = """
             <!-- PESTAÑA 3: INVENTARIO DE HERRAMIENTAS                    -->
             <!-- ======================================================== -->
             <div class="tab-pane fade" id="content-inventario" role="tabpanel">
-                <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 p-3 bg-white rounded-3 shadow-sm border-start border-4 border-danger">
+                <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 p-3 bg-white rounded-3 shadow-sm border-start border-4 border-danger">
                     <div>
                         <h4 class="fw-bold mb-1 text-dark"><i class="bi bi-tools text-danger me-2"></i>Auditoría e Inventario de Herramientas</h4>
-                        <p class="text-muted small mb-0">Control nacional de estado de herramientas por técnico, novedades físicas y evidencias fotográficas.</p>
+                        <p class="text-muted small mb-0">Control nacional de cumplimiento por ítem de herramienta, novedades físicas y evidencias fotográficas.</p>
                     </div>
                     <div class="d-flex gap-2 mt-2 mt-md-0">
                         <form action="/cargar_tecnicos_inventario" method="POST" enctype="multipart/form-data" class="d-flex align-items-center gap-2">
@@ -553,9 +612,60 @@ HTML_TEMPLATE = """
                                 <i class="bi bi-person-lines-fill me-1"></i>Actualizar Base Técnicos
                             </button>
                         </form>
-                        <a href="/descargar_inventarios" class="btn btn-success btn-sm fw-bold px-3 py-2 text-nowrap">
+                        <a href="/descargar_inventarios" id="btnDescargarInvExcel" class="btn btn-success btn-sm fw-bold px-3 py-2 text-nowrap">
                             <i class="bi bi-file-earmark-excel me-1"></i>Descargar Excel Inventarios
                         </a>
+                    </div>
+                </div>
+
+                <!-- Barra de Filtros Interactivos (Región, Zona, Aliado, Ciudad) -->
+                <div class="card card-stat p-3 bg-white mb-4 border-0 shadow-sm">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+                        <span class="fw-bold text-dark small"><i class="bi bi-funnel-fill text-danger me-1"></i>Filtros de Reporting (Región, Zona, Aliado, Ciudad)</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <span id="badgeFiltroInv" class="badge bg-secondary">Mostrando: Nacional (Todos)</span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="limpiarFiltrosInventario()">
+                                <i class="bi bi-x-circle me-1"></i>Limpiar Filtros
+                            </button>
+                        </div>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted mb-1 fw-semibold">Región</label>
+                            <select id="filtroInvRegion" class="form-select form-select-sm" onchange="aplicarFiltrosInventario()">
+                                <option value="">Todas las Regiones</option>
+                                {% for r in stats_inv.filtros.regiones %}
+                                    <option value="{{ r }}">{{ r }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted mb-1 fw-semibold">Zona / Área</label>
+                            <select id="filtroInvZona" class="form-select form-select-sm" onchange="aplicarFiltrosInventario()">
+                                <option value="">Todas las Zonas</option>
+                                {% for z in stats_inv.filtros.zonas %}
+                                    <option value="{{ z }}">{{ z }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted mb-1 fw-semibold">Aliado</label>
+                            <select id="filtroInvAliado" class="form-select form-select-sm" onchange="aplicarFiltrosInventario()">
+                                <option value="">Todos los Aliados</option>
+                                {% for a in stats_inv.filtros.aliados %}
+                                    <option value="{{ a }}">{{ a }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted mb-1 fw-semibold">Ciudad</label>
+                            <select id="filtroInvCiudad" class="form-select form-select-sm" onchange="aplicarFiltrosInventario()">
+                                <option value="">Todas las Ciudades</option>
+                                {% for c in stats_inv.filtros.ciudades %}
+                                    <option value="{{ c }}">{{ c }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
                 </div>
 
@@ -568,8 +678,9 @@ HTML_TEMPLATE = """
                                     <i class="bi bi-people-fill"></i>
                                 </div>
                                 <div>
-                                    <div class="text-muted small">Técnicos en Base Nacional</div>
-                                    <h3 class="fw-bold mb-0 text-dark">{{ "{:,}".format(stats_inv.total_tecnicos_base or 0) }}</h3>
+                                    <div class="text-muted small">Técnicos en Base</div>
+                                    <h3 class="fw-bold mb-0 text-dark" id="kpiInvTecnicosBase">{{ "{:,}".format(stats_inv.total_tecnicos_base or 0) }}</h3>
+                                    <div class="text-muted small" style="font-size: 0.78rem;" id="kpiInvSubBase">Población según filtro</div>
                                 </div>
                             </div>
                         </div>
@@ -582,7 +693,8 @@ HTML_TEMPLATE = """
                                 </div>
                                 <div>
                                     <div class="text-muted small">Auditorías Registradas</div>
-                                    <h3 class="fw-bold mb-0 text-dark">{{ stats_inv.total_inventarios }}</h3>
+                                    <h3 class="fw-bold mb-0 text-dark" id="kpiInvAuditorias">{{ stats_inv.total_inventarios }}</h3>
+                                    <div class="text-muted small" style="font-size: 0.78rem;">Inventarios cerrados</div>
                                 </div>
                             </div>
                         </div>
@@ -594,9 +706,9 @@ HTML_TEMPLATE = """
                                     <i class="bi bi-check-circle-fill"></i>
                                 </div>
                                 <div>
-                                    <div class="text-muted small">% Herramientas OK</div>
-                                    <h3 class="fw-bold mb-0 text-dark">{{ stats_inv.pct_ok }}%</h3>
-                                    <div class="text-muted small" style="font-size: 0.78rem;">{{ stats_inv.total_ok }} de {{ stats_inv.total_herramientas_eval }} eval.</div>
+                                    <div class="text-muted small">% Cumplimiento (OK)</div>
+                                    <h3 class="fw-bold mb-0 text-dark" id="kpiInvPctOk">{{ stats_inv.pct_ok }}%</h3>
+                                    <div class="text-muted small" style="font-size: 0.78rem;" id="kpiInvSubOk">{{ stats_inv.total_ok }} de {{ stats_inv.total_herramientas_eval }} eval.</div>
                                 </div>
                             </div>
                         </div>
@@ -608,48 +720,85 @@ HTML_TEMPLATE = """
                                     <i class="bi bi-camera-fill"></i>
                                 </div>
                                 <div>
-                                    <div class="text-muted small">Novedades / Evidencias</div>
-                                    <h3 class="fw-bold mb-0 text-dark">{{ stats_inv.total_novedad + stats_inv.total_faltante }}</h3>
-                                    <div class="text-muted small" style="font-size: 0.78rem;">📸 {{ stats_inv.total_evidencias }} fotos cargadas</div>
+                                    <div class="text-muted small">Novedades / Faltantes</div>
+                                    <h3 class="fw-bold mb-0 text-dark" id="kpiInvNovedades">{{ stats_inv.total_novedad + stats_inv.total_faltante }}</h3>
+                                    <div class="text-muted small" style="font-size: 0.78rem;" id="kpiInvSubFotos">📸 {{ stats_inv.total_evidencias }} fotos cargadas</div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Gráficos Inventario Fila 1 -->
+                <!-- Gráficos Inventario Fila 1: Barras Horizontales por Ítem de Herramienta y Cumplimiento -->
                 <div class="row g-4 mb-4">
                     <div class="col-lg-6">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-bar-chart-fill text-success me-2"></i>1. Estado de Herramientas Auditadas</h6>
-                                <span class="badge bg-light text-dark">Consolidado</span>
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-bar-chart-steps text-success me-2"></i>1. Cumplimiento por Ítem de Herramienta (OK y %)</h6>
+                                <span class="badge bg-success bg-opacity-10 text-success">Barras Horizontales · Cant y %</span>
                             </div>
-                            <div class="chart-container">
-                                <canvas id="chartInvEstado"></canvas>
+                            <div class="chart-container" style="position: relative; height: 370px;">
+                                <canvas id="chartInvCumplimientoItems"></canvas>
                             </div>
                         </div>
                     </div>
                     <div class="col-lg-6">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-exclamation-diamond-fill text-warning me-2"></i>2. Tipos de Novedad Presentados</h6>
-                                <span class="badge bg-light text-dark">Daño / Deterioro</span>
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-layers-fill text-primary me-2"></i>2. Desglose por Ítem (OK vs Novedad vs Faltante)</h6>
+                                <span class="badge bg-primary bg-opacity-10 text-primary">Horizontales Apiladas · Cant y %</span>
                             </div>
-                            <div class="chart-container">
-                                <canvas id="chartInvNovedades"></canvas>
+                            <div class="chart-container" style="position: relative; height: 370px;">
+                                <canvas id="chartInvDesgloseItems"></canvas>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Gráficos Inventario Fila 2 -->
+                <!-- Gráficos Inventario Fila 2: Diversificación (Dona + Área Polar + Pastel) -->
+                <div class="row g-4 mb-4">
+                    <div class="col-lg-4">
+                        <div class="card card-stat p-3 bg-white h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-pie-chart-fill text-success me-2"></i>3. Estado Global Herramientas</h6>
+                                <span class="badge bg-success bg-opacity-10 text-success">Dona · Cant y %</span>
+                            </div>
+                            <div class="chart-container" style="position: relative; height: 280px;">
+                                <canvas id="chartInvEstado"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="card card-stat p-3 bg-white h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-bullseye text-warning me-2"></i>4. Tipos de Novedad</h6>
+                                <span class="badge bg-warning bg-opacity-10 text-dark">Área Polar · Cant y %</span>
+                            </div>
+                            <div class="chart-container" style="position: relative; height: 280px;">
+                                <canvas id="chartInvNovedades"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="card card-stat p-3 bg-white h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-compass-fill text-info me-2"></i>5. Inventarios por Zona</h6>
+                                <span class="badge bg-info bg-opacity-10 text-info">Pastel · Cant y %</span>
+                            </div>
+                            <div class="chart-container" style="position: relative; height: 280px;">
+                                <canvas id="chartInvZonas"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gráficos Inventario Fila 3: Región (Dona) y Aliados (Barras Horizontales) -->
                 <div class="row g-4 mb-4">
                     <div class="col-lg-6">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-pie-chart-fill text-primary me-2"></i>3. Inventarios por Región</h6>
-                                <span class="badge bg-primary bg-opacity-10 text-primary">Dona / Región</span>
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-globe-americas text-primary me-2"></i>6. Inventarios por Región</h6>
+                                <span class="badge bg-primary bg-opacity-10 text-primary">Dona · Cant y %</span>
                             </div>
                             <div class="chart-container" style="position: relative; height: 280px;">
                                 <canvas id="chartInvRegiones"></canvas>
@@ -659,11 +808,11 @@ HTML_TEMPLATE = """
                     <div class="col-lg-6">
                         <div class="card card-stat p-3 bg-white h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-wrench-adjustable-circle-fill text-danger me-2"></i>4. Herramientas con Más Novedades o Faltantes</h6>
-                                <span class="badge bg-danger bg-opacity-10 text-danger">Top Herramientas</span>
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-building-fill-check text-danger me-2"></i>7. Auditorías de Inventario por Aliado</h6>
+                                <span class="badge bg-danger bg-opacity-10 text-danger">Barras Horizontales · Cant y %</span>
                             </div>
                             <div class="chart-container" style="position: relative; height: 280px;">
-                                <canvas id="chartInvTopTools"></canvas>
+                                <canvas id="chartInvAliados"></canvas>
                             </div>
                         </div>
                     </div>
@@ -686,17 +835,21 @@ HTML_TEMPLATE = """
                                         <th>Fecha</th>
                                         <th>Técnico</th>
                                         <th>Aliado</th>
-                                        <th>Ciudad / Región</th>
+                                        <th>Ciudad / Región / Zona</th>
                                         <th>Resumen</th>
                                         <th>Detalle Novedades / Faltantes</th>
                                         <th>Foto General</th>
                                         <th>Supervisor</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="tablaInventariosBody">
                                     {% if inventarios %}
                                         {% for inv in inventarios %}
-                                            <tr>
+                                            <tr class="fila-inventario"
+                                                data-region="{{ inv.region or '' }}"
+                                                data-zona="{{ inv.area or '' }}"
+                                                data-aliado="{{ inv.aliado or '' }}"
+                                                data-ciudad="{{ inv.comunidad or '' }}">
                                                 <td><span class="badge bg-dark font-monospace">{{ inv.codigo_auditoria }}</span></td>
                                                 <td class="text-nowrap">{{ inv.fecha_registro }}</td>
                                                 <td>
@@ -771,6 +924,29 @@ HTML_TEMPLATE = """
     <script>
         const statsVias = {{ stats_vias | tojson }};
         const statsInv = {{ stats_inv | tojson }};
+        const rawVias = {{ validaciones_vias | tojson }};
+        const rawInventarios = {{ inventarios | tojson }};
+        const HERRAMIENTAS_OFICIALES = [
+            "Cortadora de precisión",
+            "Striper",
+            "Kit de limpieza",
+            "Lápiz limpiador",
+            "Cortacables",
+            "Alcohol isopropílico",
+            "Toallas limpiadoras",
+            "Power Meter",
+            "Ponchadora UTP",
+            "Probador UTP"
+        ];
+        const PALETA_COLORES = [
+            '#da291c', '#0d6efd', '#198754', '#ffc107',
+            '#6f42c1', '#fd7e14', '#20c997', '#0dcaf0',
+            '#6610f2', '#d63384'
+        ];
+
+        // Instancias de gráficos para actualización dinámica con filtros
+        let chartsVias = {};
+        let chartsInv = {};
 
         // Registrar ChartDataLabels si está disponible desde CDN, o usar fallback canvas integrado
         if (typeof ChartDataLabels !== 'undefined') {
@@ -780,7 +956,9 @@ HTML_TEMPLATE = """
                 id: 'customDataLabelsFallback',
                 afterDatasetsDraw(chart) {
                     const { ctx } = chart;
-                    if (chart.config.type === 'doughnut') {
+                    const type = chart.config.type;
+                    const isHorizontal = chart.options && chart.options.indexAxis === 'y';
+                    if (type === 'doughnut' || type === 'pie' || type === 'polarArea') {
                         const meta = chart.getDatasetMeta(0);
                         if (!meta.hidden) {
                             const dataset = chart.data.datasets[0];
@@ -796,7 +974,7 @@ HTML_TEMPLATE = """
                                     ctx.fillStyle = '#ffffff';
                                     ctx.textAlign = 'center';
                                     ctx.textBaseline = 'middle';
-                                    ctx.shadowColor = 'rgba(0,0,0,0.7)';
+                                    ctx.shadowColor = 'rgba(0,0,0,0.75)';
                                     ctx.shadowBlur = 4;
                                     ctx.fillText(label, pos.x, pos.y);
                                     ctx.restore();
@@ -812,14 +990,23 @@ HTML_TEMPLATE = """
                             meta.data.forEach((element, index) => {
                                 const val = Number(dataset.data[index]);
                                 if (val > 0) {
-                                    const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '';
+                                    let pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '';
+                                    if (dataset.customPcts && dataset.customPcts[index] !== undefined) {
+                                        pct = dataset.customPcts[index] + '%';
+                                    }
                                     const label = `${val} (${pct})`;
                                     ctx.save();
                                     ctx.font = 'bold 11px sans-serif';
                                     ctx.fillStyle = '#1e293b';
-                                    ctx.textAlign = 'center';
-                                    ctx.textBaseline = 'bottom';
-                                    ctx.fillText(label, element.x, element.y - 4);
+                                    if (isHorizontal) {
+                                        ctx.textAlign = 'left';
+                                        ctx.textBaseline = 'middle';
+                                        ctx.fillText(label, element.x + 6, element.y);
+                                    } else {
+                                        ctx.textAlign = 'center';
+                                        ctx.textBaseline = 'bottom';
+                                        ctx.fillText(label, element.x, element.y - 4);
+                                    }
                                     ctx.restore();
                                 }
                             });
@@ -829,9 +1016,10 @@ HTML_TEMPLATE = """
             });
         }
 
-        // Generador de opciones para que todas las gráficas muestren cantidad y porcentaje tanto en barras como en tooltip
-        function buildBarOptions(metricLabel) {
+        // Opciones para Barras Horizontales (indexAxis: 'y') con Cantidad y %
+        function buildHorizontalBarOptions(metricLabel, useCustomPct = false) {
             return {
+                indexAxis: 'y',
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
@@ -839,8 +1027,13 @@ HTML_TEMPLATE = """
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                const val = context.parsed.y;
+                                const val = Number(context.parsed.x) || 0;
                                 const dataset = context.dataset;
+                                if (useCustomPct && dataset.customPcts) {
+                                    const pct = dataset.customPcts[context.dataIndex] ?? 0;
+                                    const tot = dataset.customTotals ? dataset.customTotals[context.dataIndex] : val;
+                                    return ` ${dataset.label || metricLabel}: ${val} de ${tot} (${pct}%)`;
+                                }
                                 const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
                                 const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
                                 return ` ${dataset.label || metricLabel || 'Total'}: ${val} (${pct})`;
@@ -849,8 +1042,9 @@ HTML_TEMPLATE = """
                     },
                     datalabels: {
                         anchor: 'end',
-                        align: 'top',
+                        align: 'right',
                         offset: 4,
+                        clamp: true,
                         font: {
                             weight: 'bold',
                             size: 11,
@@ -858,58 +1052,226 @@ HTML_TEMPLATE = """
                         },
                         color: '#1e293b',
                         formatter: function(value, context) {
-                            if (!value || value === 0) return '';
-                            const dataset = context.chart.data.datasets[0];
+                            const val = Number(value) || 0;
+                            const dataset = context.dataset;
+                            if (useCustomPct && dataset.customPcts) {
+                                const pct = dataset.customPcts[context.dataIndex] ?? 0;
+                                return `${val} (${pct}%)`;
+                            }
+                            if (val === 0) return '0 (0%)';
                             const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
-                            if (total === 0) return value;
-                            const pct = ((value / total) * 100).toFixed(1) + '%';
-                            return `${value} (${pct})`;
+                            if (total === 0) return `${val} (0%)`;
+                            const pct = ((val / total) * 100).toFixed(1) + '%';
+                            return `${val} (${pct})`;
                         }
                     }
                 },
                 scales: {
-                    y: {
+                    x: {
                         beginAtZero: true,
-                        grace: '18%',
+                        grace: '25%',
                         ticks: { precision: 0 }
+                    },
+                    y: {
+                        ticks: {
+                            font: { size: 11, weight: '600' }
+                        }
                     }
                 }
             };
         }
 
+        // Opciones para Barras Horizontales Apiladas (OK vs Novedad vs Faltante por cada Herramienta)
+        function buildStackedHorizontalBarOptions() {
+            return {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: { boxWidth: 12, font: { size: 11, weight: '600' } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const val = Number(context.parsed.x) || 0;
+                                const idx = context.dataIndex;
+                                const datasets = context.chart.data.datasets;
+                                const rowTotal = datasets.reduce((acc, ds) => acc + (Number(ds.data[idx]) || 0), 0);
+                                const pct = rowTotal > 0 ? ((val / rowTotal) * 100).toFixed(1) + '%' : '0%';
+                                return ` ${context.dataset.label}: ${val} (${pct})`;
+                            }
+                        }
+                    },
+                    datalabels: {
+                        anchor: 'center',
+                        align: 'center',
+                        color: '#ffffff',
+                        font: {
+                            weight: 'bold',
+                            size: 10,
+                            family: "'Segoe UI', Tahoma, sans-serif"
+                        },
+                        formatter: function(value, context) {
+                            const val = Number(value) || 0;
+                            if (val === 0) return '';
+                            const idx = context.dataIndex;
+                            const datasets = context.chart.data.datasets;
+                            const rowTotal = datasets.reduce((acc, ds) => acc + (Number(ds.data[idx]) || 0), 0);
+                            const pct = rowTotal > 0 ? ((val / rowTotal) * 100).toFixed(0) + '%' : '0%';
+                            return `${val} (${pct})`;
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        stacked: true,
+                        beginAtZero: true,
+                        ticks: { precision: 0 }
+                    },
+                    y: {
+                        stacked: true,
+                        ticks: { font: { size: 11, weight: '600' } }
+                    }
+                }
+            };
+        }
+
+        // Opciones para Gráficos Circulares (Doughnut, Pie, PolarArea) siempre con Cantidad y %
+        function buildCircularOptions(type = 'doughnut') {
+            const opts = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'right',
+                        labels: {
+                            boxWidth: 13,
+                            padding: 9,
+                            font: {
+                                size: 11,
+                                family: "'Segoe UI', Tahoma, sans-serif"
+                            },
+                            generateLabels: function(chart) {
+                                const data = chart.data;
+                                if (data.labels.length && data.datasets.length) {
+                                    const dataset = data.datasets[0];
+                                    const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+                                    return data.labels.map((label, i) => {
+                                        const val = Number(dataset.data[i]) || 0;
+                                        const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
+                                        const bg = Array.isArray(dataset.backgroundColor)
+                                            ? dataset.backgroundColor[i % dataset.backgroundColor.length]
+                                            : dataset.backgroundColor;
+                                        return {
+                                            text: `${label}: ${val} (${pct})`,
+                                            fillStyle: bg,
+                                            strokeStyle: bg,
+                                            lineWidth: 1,
+                                            hidden: isNaN(dataset.data[i]) || (chart.getDatasetMeta(0).data[i] && chart.getDatasetMeta(0).data[i].hidden),
+                                            index: i
+                                        };
+                                    });
+                                }
+                                return [];
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const val = Number(context.raw) || 0;
+                                const dataset = context.dataset;
+                                const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+                                const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
+                                return ` ${context.label}: ${val} (${pct})`;
+                            }
+                        }
+                    },
+                    datalabels: {
+                        color: '#ffffff',
+                        textStrokeColor: 'rgba(0,0,0,0.45)',
+                        textStrokeWidth: 2,
+                        font: {
+                            weight: 'bold',
+                            size: 11,
+                            family: "'Segoe UI', Tahoma, sans-serif"
+                        },
+                        formatter: function(value, context) {
+                            const val = Number(value) || 0;
+                            if (val === 0) return '';
+                            const dataset = context.chart.data.datasets[0];
+                            const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+                            if (total === 0) return `${val}`;
+                            const pct = ((val / total) * 100).toFixed(1) + '%';
+                            return `${val} (${pct})`;
+                        }
+                    }
+                }
+            };
+            if (type === 'doughnut') {
+                opts.cutout = '55%';
+            }
+            if (type === 'polarArea') {
+                opts.scales = {
+                    r: {
+                        beginAtZero: true,
+                        ticks: { display: false }
+                    }
+                };
+            }
+            return opts;
+        }
+
+        function coloresSemaforoCumplimiento(pcts) {
+            return pcts.map(p => {
+                if (p >= 90) return '#198754';
+                if (p >= 70) return '#fd7e14';
+                return '#dc3545';
+            });
+        }
+
         function initCharts() {
-            // 1. Chart Automatico
-            new Chart(document.getElementById('chartAuto'), {
-                type: 'bar',
+            // =========================================================================
+            // PESTAÑA 2: VALIDACIÓN CAMBIO DE VÍÁS ONNET (Diversificados con Cant y %)
+            // =========================================================================
+            // 1. Dona: ¿Cambio de Vías Automático?
+            chartsVias.auto = new Chart(document.getElementById('chartAuto'), {
+                type: 'doughnut',
                 data: {
                     labels: statsVias.auto_labels,
                     datasets: [{
                         label: 'Validaciones',
                         data: statsVias.auto_values,
                         backgroundColor: ['#198754', '#dc3545'],
-                        borderRadius: 6
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
                     }]
                 },
-                options: buildBarOptions('Validaciones')
+                options: buildCircularOptions('doughnut')
             });
 
-            // 2. Chart Exitoso
-            new Chart(document.getElementById('chartExito'), {
-                type: 'bar',
+            // 2. Pastel (Pie): ¿Cambio de Vías Exitoso?
+            chartsVias.exito = new Chart(document.getElementById('chartExito'), {
+                type: 'pie',
                 data: {
                     labels: statsVias.exito_labels,
                     datasets: [{
                         label: 'Validaciones',
                         data: statsVias.exito_values,
                         backgroundColor: ['#198754', '#fd7e14'],
-                        borderRadius: 6
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
                     }]
                 },
-                options: buildBarOptions('Validaciones')
+                options: buildCircularOptions('pie')
             });
 
-            // 3. Chart Tiempo
-            new Chart(document.getElementById('chartTiempo'), {
+            // 3. Barras Horizontales: Tiempo de Duración
+            chartsVias.tiempo = new Chart(document.getElementById('chartTiempo'), {
                 type: 'bar',
                 data: {
                     labels: statsVias.tiempo_labels,
@@ -920,26 +1282,27 @@ HTML_TEMPLATE = """
                         borderRadius: 6
                     }]
                 },
-                options: buildBarOptions('Validaciones')
+                options: buildHorizontalBarOptions('Validaciones')
             });
 
-            // 4. Chart Experiencia
-            new Chart(document.getElementById('chartExp'), {
-                type: 'bar',
+            // 4. Dona: Experiencia del Técnico
+            chartsVias.exp = new Chart(document.getElementById('chartExp'), {
+                type: 'doughnut',
                 data: {
                     labels: statsVias.exp_labels,
                     datasets: [{
                         label: 'Técnicos',
                         data: statsVias.exp_values,
                         backgroundColor: ['#0d6efd', '#ffc107'],
-                        borderRadius: 6
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
                     }]
                 },
-                options: buildBarOptions('Técnicos')
+                options: buildCircularOptions('doughnut')
             });
 
-            // 5. Chart Ciudades
-            new Chart(document.getElementById('chartCiudades'), {
+            // 5. Barras Horizontales: Ciudades (Top 8)
+            chartsVias.ciudades = new Chart(document.getElementById('chartCiudades'), {
                 type: 'bar',
                 data: {
                     labels: statsVias.ciudades_labels.length ? statsVias.ciudades_labels : ['Sin datos'],
@@ -950,11 +1313,11 @@ HTML_TEMPLATE = """
                         borderRadius: 6
                     }]
                 },
-                options: buildBarOptions('Validaciones')
+                options: buildHorizontalBarOptions('Validaciones')
             });
 
-            // 6. Chart Aliados
-            new Chart(document.getElementById('chartAliados'), {
+            // 6. Barras Horizontales: Aliados
+            chartsVias.aliados = new Chart(document.getElementById('chartAliados'), {
                 type: 'bar',
                 data: {
                     labels: statsVias.aliados_labels.length ? statsVias.aliados_labels : ['Sin datos'],
@@ -965,238 +1328,514 @@ HTML_TEMPLATE = """
                         borderRadius: 6
                     }]
                 },
-                options: buildBarOptions('Validaciones')
+                options: buildHorizontalBarOptions('Validaciones')
             });
 
-            // 7. Chart Regiones (Dona)
-            const coloresRegiones = [
-                '#da291c', '#0d6efd', '#198754', '#ffc107', 
-                '#6f42c1', '#fd7e14', '#20c997', '#0dcaf0'
-            ];
-            new Chart(document.getElementById('chartRegiones'), {
+            // 7. Dona: Regiones
+            chartsVias.regiones = new Chart(document.getElementById('chartRegiones'), {
                 type: 'doughnut',
                 data: {
                     labels: statsVias.regiones_labels.length ? statsVias.regiones_labels : ['Sin datos'],
                     datasets: [{
                         label: 'Validaciones',
                         data: statsVias.regiones_values.length ? statsVias.regiones_values : [0],
-                        backgroundColor: coloresRegiones,
+                        backgroundColor: PALETA_COLORES,
                         borderWidth: 2,
                         borderColor: '#ffffff'
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: true,
-                            position: 'right',
-                            labels: {
-                                boxWidth: 14,
-                                padding: 10,
-                                font: {
-                                    size: 11,
-                                    family: "'Segoe UI', Tahoma, sans-serif"
-                                },
-                                generateLabels: function(chart) {
-                                    const data = chart.data;
-                                    if (data.labels.length && data.datasets.length) {
-                                        const dataset = data.datasets[0];
-                                        const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
-                                        return data.labels.map((label, i) => {
-                                            const val = Number(dataset.data[i]) || 0;
-                                            const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
-                                            const fill = dataset.backgroundColor[i % dataset.backgroundColor.length];
-                                            return {
-                                                text: `${label}: ${val} (${pct})`,
-                                                fillStyle: fill,
-                                                strokeStyle: fill,
-                                                lineWidth: 1,
-                                                hidden: isNaN(dataset.data[i]) || (chart.getDatasetMeta(0).data[i] && chart.getDatasetMeta(0).data[i].hidden),
-                                                index: i
-                                            };
-                                        });
-                                    }
-                                    return [];
-                                }
-                            }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const val = Number(context.raw) || 0;
-                                    const dataset = context.dataset;
-                                    const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
-                                    const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
-                                    return ` ${context.label}: ${val} (${pct})`;
-                                }
-                            }
-                        },
-                        datalabels: {
-                            color: '#ffffff',
-                            font: {
-                                weight: 'bold',
-                                size: 11,
-                                family: "'Segoe UI', Tahoma, sans-serif"
-                            },
-                            formatter: function(value, context) {
-                                if (!value || value === 0) return '';
-                                const dataset = context.chart.data.datasets[0];
-                                const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
-                                if (total === 0) return value;
-                                const pct = ((value / total) * 100).toFixed(1) + '%';
-                                return `${value} (${pct})`;
-                            }
-                        }
-                    },
-                    cutout: '55%'
-                }
+                options: buildCircularOptions('doughnut')
             });
 
-            // 8. Chart Errores
-            new Chart(document.getElementById('chartErrores'), {
-                type: 'bar',
+            // 8. Área Polar: Errores Presentados
+            chartsVias.errores = new Chart(document.getElementById('chartErrores'), {
+                type: 'polarArea',
                 data: {
                     labels: statsVias.errores_labels.length ? statsVias.errores_labels : ['Sin fallas registradas'],
                     datasets: [{
                         label: 'Ocurrencias',
                         data: statsVias.errores_values.length ? statsVias.errores_values : [0],
-                        backgroundColor: '#dc3545',
+                        backgroundColor: [
+                            'rgba(220, 53, 69, 0.85)',
+                            'rgba(253, 126, 20, 0.85)',
+                            'rgba(255, 193, 7, 0.85)',
+                            'rgba(13, 110, 253, 0.85)',
+                            'rgba(111, 66, 193, 0.85)'
+                        ],
+                        borderWidth: 1,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: buildCircularOptions('polarArea')
+            });
+
+            // =========================================================================
+            // PESTAÑA 3: INVENTARIO DE HERRAMIENTAS (Barras Horizontales por Ítem + Diversificados)
+            // =========================================================================
+            const hLabels = (statsInv.herramientas_labels && statsInv.herramientas_labels.length)
+                ? statsInv.herramientas_labels
+                : HERRAMIENTAS_OFICIALES;
+            const hOk = (statsInv.herramientas_ok_values && statsInv.herramientas_ok_values.length)
+                ? statsInv.herramientas_ok_values
+                : hLabels.map(() => 0);
+            const hNov = (statsInv.herramientas_nov_values && statsInv.herramientas_nov_values.length)
+                ? statsInv.herramientas_nov_values
+                : hLabels.map(() => 0);
+            const hFalt = (statsInv.herramientas_falt_values && statsInv.herramientas_falt_values.length)
+                ? statsInv.herramientas_falt_values
+                : hLabels.map(() => 0);
+            const hPcts = (statsInv.herramientas_pct_cumplimiento && statsInv.herramientas_pct_cumplimiento.length)
+                ? statsInv.herramientas_pct_cumplimiento
+                : hLabels.map(() => 0);
+            const hTotals = hLabels.map((_, idx) => (Number(hOk[idx]) || 0) + (Number(hNov[idx]) || 0) + (Number(hFalt[idx]) || 0));
+
+            // 1. Barras Horizontales: Cumplimiento por cada Ítem de Herramienta (Cant OK y % Cumplimiento)
+            chartsInv.cumplimientoItems = new Chart(document.getElementById('chartInvCumplimientoItems'), {
+                type: 'bar',
+                data: {
+                    labels: hLabels,
+                    datasets: [{
+                        label: 'Herramientas OK (Cumplimiento)',
+                        data: hOk,
+                        customPcts: hPcts,
+                        customTotals: hTotals,
+                        backgroundColor: coloresSemaforoCumplimiento(hPcts),
                         borderRadius: 6
                     }]
                 },
-                options: buildBarOptions('Ocurrencias')
+                options: buildHorizontalBarOptions('Cumplimiento OK', true)
             });
 
-            // 9. Chart Inventario: Estado General
-            new Chart(document.getElementById('chartInvEstado'), {
+            // 2. Barras Horizontales Apiladas: Estado Detallado por cada Ítem de Herramienta
+            chartsInv.desgloseItems = new Chart(document.getElementById('chartInvDesgloseItems'), {
                 type: 'bar',
+                data: {
+                    labels: hLabels,
+                    datasets: [
+                        {
+                            label: '✅ OK',
+                            data: hOk,
+                            backgroundColor: '#198754',
+                            borderRadius: 4
+                        },
+                        {
+                            label: '⚠️ Con Novedad',
+                            data: hNov,
+                            backgroundColor: '#fd7e14',
+                            borderRadius: 4
+                        },
+                        {
+                            label: '❌ Faltante',
+                            data: hFalt,
+                            backgroundColor: '#dc3545',
+                            borderRadius: 4
+                        }
+                    ]
+                },
+                options: buildStackedHorizontalBarOptions()
+            });
+
+            // 3. Dona: Estado Global de Herramientas
+            chartsInv.estado = new Chart(document.getElementById('chartInvEstado'), {
+                type: 'doughnut',
                 data: {
                     labels: statsInv.estado_labels,
                     datasets: [{
                         label: 'Herramientas',
                         data: statsInv.estado_values,
                         backgroundColor: ['#198754', '#fd7e14', '#dc3545'],
-                        borderRadius: 6
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
                     }]
                 },
-                options: buildBarOptions('Herramientas')
+                options: buildCircularOptions('doughnut')
             });
 
-            // 10. Chart Inventario: Novedades
-            new Chart(document.getElementById('chartInvNovedades'), {
-                type: 'bar',
+            // 4. Área Polar: Tipos de Novedad Presentados
+            chartsInv.novedades = new Chart(document.getElementById('chartInvNovedades'), {
+                type: 'polarArea',
                 data: {
                     labels: statsInv.novedades_labels,
                     datasets: [{
                         label: 'Novedades',
                         data: statsInv.novedades_values,
-                        backgroundColor: ['#dc3545', '#fd7e14', '#ffc107', '#0d6efd'],
-                        borderRadius: 6
+                        backgroundColor: [
+                            'rgba(220, 53, 69, 0.85)',
+                            'rgba(253, 126, 20, 0.85)',
+                            'rgba(255, 193, 7, 0.85)',
+                            'rgba(13, 110, 253, 0.85)'
+                        ],
+                        borderWidth: 1,
+                        borderColor: '#ffffff'
                     }]
                 },
-                options: buildBarOptions('Novedades')
+                options: buildCircularOptions('polarArea')
             });
 
-            // 11. Chart Inventario: Regiones (Dona)
-            new Chart(document.getElementById('chartInvRegiones'), {
+            // 5. Pastel (Pie): Inventarios por Zona / Área
+            chartsInv.zonas = new Chart(document.getElementById('chartInvZonas'), {
+                type: 'pie',
+                data: {
+                    labels: (statsInv.zonas_labels && statsInv.zonas_labels.length) ? statsInv.zonas_labels : ['Sin datos'],
+                    datasets: [{
+                        label: 'Inventarios',
+                        data: (statsInv.zonas_values && statsInv.zonas_values.length) ? statsInv.zonas_values : [0],
+                        backgroundColor: ['#0dcaf0', '#6f42c1', '#20c997', '#fd7e14', '#0d6efd', '#ffc107', '#da291c'],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: buildCircularOptions('pie')
+            });
+
+            // 6. Dona: Inventarios por Región
+            chartsInv.regiones = new Chart(document.getElementById('chartInvRegiones'), {
                 type: 'doughnut',
                 data: {
                     labels: statsInv.regiones_labels.length ? statsInv.regiones_labels : ['Sin datos'],
                     datasets: [{
                         label: 'Inventarios',
                         data: statsInv.regiones_values.length ? statsInv.regiones_values : [0],
-                        backgroundColor: coloresRegiones,
+                        backgroundColor: PALETA_COLORES,
                         borderWidth: 2,
                         borderColor: '#ffffff'
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: true,
-                            position: 'right',
-                            labels: {
-                                boxWidth: 14,
-                                padding: 10,
-                                font: {
-                                    size: 11,
-                                    family: "'Segoe UI', Tahoma, sans-serif"
-                                },
-                                generateLabels: function(chart) {
-                                    const data = chart.data;
-                                    if (data.labels.length && data.datasets.length) {
-                                        const dataset = data.datasets[0];
-                                        const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
-                                        return data.labels.map((label, i) => {
-                                            const val = Number(dataset.data[i]) || 0;
-                                            const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
-                                            const fill = dataset.backgroundColor[i % dataset.backgroundColor.length];
-                                            return {
-                                                text: `${label}: ${val} (${pct})`,
-                                                fillStyle: fill,
-                                                strokeStyle: fill,
-                                                lineWidth: 1,
-                                                hidden: isNaN(dataset.data[i]) || (chart.getDatasetMeta(0).data[i] && chart.getDatasetMeta(0).data[i].hidden),
-                                                index: i
-                                            };
-                                        });
-                                    }
-                                    return [];
-                                }
-                            }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const val = Number(context.raw) || 0;
-                                    const dataset = context.dataset;
-                                    const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
-                                    const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
-                                    return ` ${context.label}: ${val} (${pct})`;
-                                }
-                            }
-                        },
-                        datalabels: {
-                            anchor: 'center',
-                            align: 'center',
-                            color: '#ffffff',
-                            font: {
-                                weight: 'bold',
-                                size: 11,
-                                family: "'Segoe UI', Tahoma, sans-serif"
-                            },
-                            formatter: function(value, context) {
-                                if (!value || value === 0) return '';
-                                const dataset = context.chart.data.datasets[0];
-                                const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
-                                if (total === 0) return value;
-                                const pct = ((value / total) * 100).toFixed(1) + '%';
-                                return `${value} (${pct})`;
-                            }
-                        }
-                    },
-                    cutout: '55%'
-                }
+                options: buildCircularOptions('doughnut')
             });
 
-            // 12. Chart Inventario: Top Herramientas con Novedad/Faltante
-            new Chart(document.getElementById('chartInvTopTools'), {
+            // 7. Barras Horizontales: Auditorías por Aliado
+            chartsInv.aliados = new Chart(document.getElementById('chartInvAliados'), {
                 type: 'bar',
                 data: {
-                    labels: statsInv.top_tools_labels.length ? statsInv.top_tools_labels : ['Sin novedades registradas'],
+                    labels: (statsInv.aliados_labels && statsInv.aliados_labels.length) ? statsInv.aliados_labels : ['Sin datos'],
                     datasets: [{
-                        label: 'Incidencias',
-                        data: statsInv.top_tools_values.length ? statsInv.top_tools_values : [0],
+                        label: 'Auditorías',
+                        data: (statsInv.aliados_values && statsInv.aliados_values.length) ? statsInv.aliados_values : [0],
                         backgroundColor: '#da291c',
                         borderRadius: 6
                     }]
                 },
-                options: buildBarOptions('Incidencias')
+                options: buildHorizontalBarOptions('Auditorías')
             });
+        }
+
+        // =========================================================================
+        // LÓGICA DE FILTRADO REACTIVO: INVENTARIO DE HERRAMIENTAS
+        // =========================================================================
+        function eqIgnoreCase(a, b) {
+            return String(a || '').trim().toUpperCase() === String(b || '').trim().toUpperCase();
+        }
+
+        function aplicarFiltrosInventario() {
+            const region = document.getElementById('filtroInvRegion').value;
+            const zona = document.getElementById('filtroInvZona').value;
+            const aliado = document.getElementById('filtroInvAliado').value;
+            const ciudad = document.getElementById('filtroInvCiudad').value;
+
+            // Actualizar badge y link de descarga Excel
+            const activos = [];
+            const params = new URLSearchParams();
+            if (region) { activos.push(`Región: ${region}`); params.set('region', region); }
+            if (zona) { activos.push(`Zona: ${zona}`); params.set('zona', zona); }
+            if (aliado) { activos.push(`Aliado: ${aliado}`); params.set('aliado', aliado); }
+            if (ciudad) { activos.push(`Ciudad: ${ciudad}`); params.set('ciudad', ciudad); }
+
+            const badge = document.getElementById('badgeFiltroInv');
+            if (activos.length > 0) {
+                badge.className = 'badge bg-danger';
+                badge.textContent = 'Filtrado: ' + activos.join(' | ');
+            } else {
+                badge.className = 'badge bg-secondary';
+                badge.textContent = 'Mostrando: Nacional (Todos)';
+            }
+
+            const btnExcel = document.getElementById('btnDescargarInvExcel');
+            if (btnExcel) {
+                const qs = params.toString();
+                btnExcel.href = qs ? `/descargar_inventarios?${qs}` : '/descargar_inventarios';
+            }
+
+            // 1. Filtrar Técnicos en Base Nacional según desglose territorial
+            let totalTecnicosFiltrados = statsInv.total_tecnicos_base || 0;
+            if ((region || zona || aliado || ciudad) && Array.isArray(statsInv.tecnicos_territorial)) {
+                totalTecnicosFiltrados = statsInv.tecnicos_territorial
+                    .filter(t => (!region || eqIgnoreCase(t.region, region))
+                              && (!zona || eqIgnoreCase(t.zona, zona))
+                              && (!aliado || eqIgnoreCase(t.aliado, aliado))
+                              && (!ciudad || eqIgnoreCase(t.ciudad, ciudad)))
+                    .reduce((acc, t) => acc + (Number(t.cnt) || 0), 0);
+            }
+            document.getElementById('kpiInvTecnicosBase').textContent = totalTecnicosFiltrados.toLocaleString('es-CO');
+
+            // 2. Filtrar registros de inventario
+            const invFiltrados = rawInventarios.filter(inv => {
+                return (!region || eqIgnoreCase(inv.region, region))
+                    && (!zona || eqIgnoreCase(inv.area, zona))
+                    && (!aliado || eqIgnoreCase(inv.aliado, aliado))
+                    && (!ciudad || eqIgnoreCase(inv.comunidad, ciudad));
+            });
+
+            // 3. Recalcular KPIs
+            const totalInv = invFiltrados.length;
+            let totalOk = 0, totalNov = 0, totalFalt = 0, totalEvid = 0;
+            invFiltrados.forEach(inv => {
+                totalOk += Number(inv.herramientas_ok) || 0;
+                totalNov += Number(inv.herramientas_novedad) || 0;
+                totalFalt += Number(inv.herramientas_faltantes) || 0;
+                totalEvid += Number(inv.evidencias_cargadas) || 0;
+            });
+            const totalEval = totalOk + totalNov + totalFalt;
+            const pctOk = totalEval > 0 ? ((totalOk / totalEval) * 100).toFixed(1) : '0.0';
+
+            document.getElementById('kpiInvAuditorias').textContent = totalInv;
+            document.getElementById('kpiInvPctOk').textContent = `${pctOk}%`;
+            document.getElementById('kpiInvSubOk').textContent = `${totalOk} de ${totalEval} eval.`;
+            document.getElementById('kpiInvNovedades').textContent = (totalNov + totalFalt);
+            document.getElementById('kpiInvSubFotos').textContent = `📸 ${totalEvid} fotos cargadas`;
+
+            // 4. Recalcular métricas por cada una de las 10 herramientas
+            const mapTools = {};
+            HERRAMIENTAS_OFICIALES.forEach(h => { mapTools[h] = { ok: 0, nov: 0, falt: 0 }; });
+            const novMap = {
+                'No funciona': 0,
+                'Funciona parcialmente': 0,
+                'Deterioro físico': 0,
+                'Falta accesorio': 0
+            };
+
+            invFiltrados.forEach(inv => {
+                (inv.detalles || []).forEach(d => {
+                    const hName = d.herramienta;
+                    if (!mapTools[hName]) {
+                        mapTools[hName] = { ok: 0, nov: 0, falt: 0 };
+                    }
+                    const est = String(d.estado || '').toUpperCase();
+                    if (est === 'OK') mapTools[hName].ok++;
+                    else if (est === 'NOVEDAD') {
+                        mapTools[hName].nov++;
+                        const nv = String(d.novedad || '');
+                        if (nv.toLowerCase().includes('no funciona')) novMap['No funciona']++;
+                        else if (nv.toLowerCase().includes('parcial')) novMap['Funciona parcialmente']++;
+                        else if (nv.toLowerCase().includes('deterioro')) novMap['Deterioro físico']++;
+                        else if (nv.toLowerCase().includes('accesorio')) novMap['Falta accesorio']++;
+                    } else if (est === 'FALTANTE') {
+                        mapTools[hName].falt++;
+                    }
+                });
+            });
+
+            const hLabels = HERRAMIENTAS_OFICIALES;
+            const hOk = hLabels.map(h => mapTools[h].ok);
+            const hNov = hLabels.map(h => mapTools[h].nov);
+            const hFalt = hLabels.map(h => mapTools[h].falt);
+            const hTotals = hLabels.map((_, i) => hOk[i] + hNov[i] + hFalt[i]);
+            const hPcts = hLabels.map((_, i) => hTotals[i] > 0 ? Number(((hOk[i] / hTotals[i]) * 100).toFixed(1)) : 0);
+
+            // Actualizar Gráfico 1: Cumplimiento por Ítem
+            chartsInv.cumplimientoItems.data.labels = hLabels;
+            chartsInv.cumplimientoItems.data.datasets[0].data = hOk;
+            chartsInv.cumplimientoItems.data.datasets[0].customPcts = hPcts;
+            chartsInv.cumplimientoItems.data.datasets[0].customTotals = hTotals;
+            chartsInv.cumplimientoItems.data.datasets[0].backgroundColor = coloresSemaforoCumplimiento(hPcts);
+            chartsInv.cumplimientoItems.update();
+
+            // Actualizar Gráfico 2: Desglose Apilado por Ítem
+            chartsInv.desgloseItems.data.labels = hLabels;
+            chartsInv.desgloseItems.data.datasets[0].data = hOk;
+            chartsInv.desgloseItems.data.datasets[1].data = hNov;
+            chartsInv.desgloseItems.data.datasets[2].data = hFalt;
+            chartsInv.desgloseItems.update();
+
+            // Actualizar Gráfico 3: Estado Global
+            chartsInv.estado.data.datasets[0].data = [totalOk, totalNov, totalFalt];
+            chartsInv.estado.update();
+
+            // Actualizar Gráfico 4: Novedades
+            chartsInv.novedades.data.datasets[0].data = [
+                novMap['No funciona'],
+                novMap['Funciona parcialmente'],
+                novMap['Deterioro físico'],
+                novMap['Falta accesorio']
+            ];
+            chartsInv.novedades.update();
+
+            // Agrupaciones por Zona, Región y Aliado
+            function agruparPor(lista, campo, defaultLabel = 'Sin definir') {
+                const counts = {};
+                lista.forEach(item => {
+                    const k = String(item[campo] || defaultLabel).trim() || defaultLabel;
+                    counts[k] = (counts[k] || 0) + 1;
+                });
+                const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+                return {
+                    labels: entries.length ? entries.map(e => e[0]) : ['Sin datos'],
+                    values: entries.length ? entries.map(e => e[1]) : [0]
+                };
+            }
+
+            const grpZonas = agruparPor(invFiltrados, 'area', 'Sin Zona');
+            chartsInv.zonas.data.labels = grpZonas.labels;
+            chartsInv.zonas.data.datasets[0].data = grpZonas.values;
+            chartsInv.zonas.update();
+
+            const grpRegiones = agruparPor(invFiltrados, 'region', 'Sin Región');
+            chartsInv.regiones.data.labels = grpRegiones.labels;
+            chartsInv.regiones.data.datasets[0].data = grpRegiones.values;
+            chartsInv.regiones.update();
+
+            const grpAliados = agruparPor(invFiltrados, 'aliado', 'Sin Aliado');
+            chartsInv.aliados.data.labels = grpAliados.labels.slice(0, 10);
+            chartsInv.aliados.data.datasets[0].data = grpAliados.values.slice(0, 10);
+            chartsInv.aliados.update();
+
+            // 5. Filtrar filas de la tabla de inventarios
+            document.querySelectorAll('.fila-inventario').forEach(tr => {
+                const match = (!region || eqIgnoreCase(tr.dataset.region, region))
+                           && (!zona || eqIgnoreCase(tr.dataset.zona, zona))
+                           && (!aliado || eqIgnoreCase(tr.dataset.aliado, aliado))
+                           && (!ciudad || eqIgnoreCase(tr.dataset.ciudad, ciudad));
+                tr.style.display = match ? '' : 'none';
+            });
+        }
+
+        function limpiarFiltrosInventario() {
+            document.getElementById('filtroInvRegion').value = '';
+            document.getElementById('filtroInvZona').value = '';
+            document.getElementById('filtroInvAliado').value = '';
+            document.getElementById('filtroInvCiudad').value = '';
+            aplicarFiltrosInventario();
+        }
+
+        // =========================================================================
+        // LÓGICA DE FILTRADO REACTIVO: CAMBIO DE VÍÁS ONNET
+        // =========================================================================
+        function aplicarFiltrosVias() {
+            const region = document.getElementById('filtroViasRegion').value;
+            const zona = document.getElementById('filtroViasZona').value;
+            const aliado = document.getElementById('filtroViasAliado').value;
+            const ciudad = document.getElementById('filtroViasCiudad').value;
+
+            const activos = [];
+            if (region) activos.push(`Región: ${region}`);
+            if (zona) activos.push(`Zona: ${zona}`);
+            if (aliado) activos.push(`Aliado: ${aliado}`);
+            if (ciudad) activos.push(`Ciudad: ${ciudad}`);
+
+            const badge = document.getElementById('badgeFiltroVias');
+            if (activos.length > 0) {
+                badge.className = 'badge bg-danger';
+                badge.textContent = 'Filtrado: ' + activos.join(' | ');
+            } else {
+                badge.className = 'badge bg-secondary';
+                badge.textContent = 'Mostrando: Nacional (Todos)';
+            }
+
+            const viasFiltradas = rawVias.filter(v => {
+                return (!region || eqIgnoreCase(v.region, region))
+                    && (!zona || eqIgnoreCase(v.area, zona))
+                    && (!aliado || eqIgnoreCase(v.aliado, aliado))
+                    && (!ciudad || eqIgnoreCase(v.comunidad, ciudad));
+            });
+
+            const total = viasFiltradas.length;
+            let autoSi = 0, autoNo = 0;
+            let exitoSi = 0, exitoNo = 0;
+            let t12 = 0, t23 = 0, tMas3 = 0;
+            let expPos = 0, expNeg = 0;
+            const errCounts = {};
+
+            viasFiltradas.forEach(v => {
+                const a = String(v.cambio_vias_automatico || '').toUpperCase();
+                if (a === 'SI' || a === 'SÍ') autoSi++; else autoNo++;
+
+                const e = String(v.cambio_vias_exitoso || '').toUpperCase();
+                if (e === 'SI' || e === 'SÍ') exitoSi++; else {
+                    exitoNo++;
+                    const err = String(v.error_presentado || '').trim();
+                    if (err && err !== 'N/A') {
+                        errCounts[err] = (errCounts[err] || 0) + 1;
+                    }
+                }
+
+                const t = String(v.tiempo_duracion || '').toLowerCase();
+                if (t.includes('1 a 2')) t12++;
+                else if (t.includes('2 a 3')) t23++;
+                else tMas3++;
+
+                const ex = String(v.experiencia_tecnico || '').toLowerCase();
+                if (ex.includes('positiva')) expPos++; else expNeg++;
+            });
+
+            const pctAuto = total > 0 ? ((autoSi / total) * 100).toFixed(1) : '0.0';
+            const pctExito = total > 0 ? ((exitoSi / total) * 100).toFixed(1) : '0.0';
+            const pctExp = total > 0 ? ((expPos / total) * 100).toFixed(1) : '0.0';
+
+            document.getElementById('kpiViasTotal').textContent = total;
+            document.getElementById('kpiViasAuto').textContent = `${pctAuto}%`;
+            document.getElementById('kpiViasExito').textContent = `${pctExito}%`;
+            document.getElementById('kpiViasExp').textContent = `${pctExp}%`;
+
+            chartsVias.auto.data.datasets[0].data = [autoSi, autoNo];
+            chartsVias.auto.update();
+
+            chartsVias.exito.data.datasets[0].data = [exitoSi, exitoNo];
+            chartsVias.exito.update();
+
+            chartsVias.tiempo.data.datasets[0].data = [t12, t23, tMas3];
+            chartsVias.tiempo.update();
+
+            chartsVias.exp.data.datasets[0].data = [expPos, expNeg];
+            chartsVias.exp.update();
+
+            function agruparTop(lista, campo, topN = 8) {
+                const counts = {};
+                lista.forEach(item => {
+                    const k = String(item[campo] || 'Sin datos').trim() || 'Sin datos';
+                    counts[k] = (counts[k] || 0) + 1;
+                });
+                const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, topN);
+                return {
+                    labels: entries.length ? entries.map(e => e[0]) : ['Sin datos'],
+                    values: entries.length ? entries.map(e => e[1]) : [0]
+                };
+            }
+
+            const grpCiudades = agruparTop(viasFiltradas, 'comunidad', 8);
+            chartsVias.ciudades.data.labels = grpCiudades.labels;
+            chartsVias.ciudades.data.datasets[0].data = grpCiudades.values;
+            chartsVias.ciudades.update();
+
+            const grpAliados = agruparTop(viasFiltradas, 'aliado', 8);
+            chartsVias.aliados.data.labels = grpAliados.labels;
+            chartsVias.aliados.data.datasets[0].data = grpAliados.values;
+            chartsVias.aliados.update();
+
+            const grpRegiones = agruparTop(viasFiltradas, 'region', 10);
+            chartsVias.regiones.data.labels = grpRegiones.labels;
+            chartsVias.regiones.data.datasets[0].data = grpRegiones.values;
+            chartsVias.regiones.update();
+
+            const errEntries = Object.entries(errCounts).sort((a, b) => b[1] - a[1]);
+            chartsVias.errores.data.labels = errEntries.length ? errEntries.map(e => e[0]) : ['Sin fallas registradas'];
+            chartsVias.errores.data.datasets[0].data = errEntries.length ? errEntries.map(e => e[1]) : [0];
+            chartsVias.errores.update();
+
+            document.querySelectorAll('.fila-vias').forEach(tr => {
+                const match = (!region || eqIgnoreCase(tr.dataset.region, region))
+                           && (!zona || eqIgnoreCase(tr.dataset.zona, zona))
+                           && (!aliado || eqIgnoreCase(tr.dataset.aliado, aliado))
+                           && (!ciudad || eqIgnoreCase(tr.dataset.ciudad, ciudad));
+                tr.style.display = match ? '' : 'none';
+            });
+        }
+
+        function limpiarFiltrosVias() {
+            document.getElementById('filtroViasRegion').value = '';
+            document.getElementById('filtroViasZona').value = '';
+            document.getElementById('filtroViasAliado').value = '';
+            document.getElementById('filtroViasCiudad').value = '';
+            aplicarFiltrosVias();
         }
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -1220,9 +1859,9 @@ def index():
     stats = db.get_estadisticas()
     hallazgos = db.get_ultimos_hallazgos(limit=50)
     stats_vias = db.get_estadisticas_vias()
-    validaciones_vias = db.get_validaciones_vias(limit=50)
+    validaciones_vias = db.get_validaciones_vias(limit=500)
     stats_inv = db.get_estadisticas_inventario()
-    inventarios = db.get_inventarios_herramientas(limit=50)
+    inventarios = db.get_inventarios_herramientas(limit=500)
     return render_template_string(
         HTML_TEMPLATE,
         stats=stats,
@@ -1350,9 +1989,20 @@ def descargar_validaciones_vias():
 
 @app.route("/descargar_inventarios")
 def descargar_inventarios():
-    inventarios = db.get_inventarios_herramientas(limit=10000)
+    region = request.args.get("region") or None
+    aliado = request.args.get("aliado") or None
+    ciudad = request.args.get("ciudad") or None
+    zona = request.args.get("zona") or None
+
+    inventarios = db.get_inventarios_herramientas(
+        limit=10000,
+        region=region,
+        aliado=aliado,
+        comunidad=ciudad,
+        area=zona
+    )
     if not inventarios:
-        flash("No hay inventarios registrados para exportar.", "info")
+        flash("No hay inventarios registrados para los filtros seleccionados.", "info")
         return redirect(url_for("index"))
 
     resumen_rows = []
@@ -1360,7 +2010,13 @@ def descargar_inventarios():
         r = {k: v for k, v in inv.items() if k != 'detalles'}
         resumen_rows.append(r)
 
-    detalles_rows = db.get_inventarios_detalle_export(limit=50000)
+    detalles_rows = db.get_inventarios_detalle_export(
+        limit=50000,
+        region=region,
+        aliado=aliado,
+        comunidad=ciudad,
+        area=zona
+    )
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:

@@ -1046,16 +1046,37 @@ def guardar_validacion_vias(datos):
         conn.close()
 
 def get_validaciones_vias(limit=1000):
-    # Retorna las validaciones de cambio de vias registradas
+    # Retorna las validaciones de cambio de vias registradas enriquecidas con area (Zona)
     conn, engine = get_connection()
     try:
         cur = conn.cursor()
+        # Mapa rapido de comunidad -> area
+        area_map = {}
+        try:
+            cur.execute("SELECT DISTINCT comunidad, area FROM base_tecnicos_inventario WHERE comunidad IS NOT NULL AND comunidad != '' AND area IS NOT NULL AND area != ''")
+            for r in cur.fetchall():
+                c_val = (r['comunidad'] if engine == "mysql" else r[0]).strip().upper()
+                a_val = (r['area'] if engine == "mysql" else r[1]).strip()
+                if c_val and a_val:
+                    area_map[c_val] = a_val
+            cur.execute("SELECT DISTINCT comunidad, area FROM visitas_calidad WHERE comunidad IS NOT NULL AND comunidad != '' AND area IS NOT NULL AND area != ''")
+            for r in cur.fetchall():
+                c_val = (r['comunidad'] if engine == "mysql" else r[0]).strip().upper()
+                a_val = (r['area'] if engine == "mysql" else r[1]).strip()
+                if c_val and a_val and c_val not in area_map:
+                    area_map[c_val] = a_val
+        except Exception:
+            pass
+
         sql = f"SELECT * FROM validacion_cambio_vias_onnet ORDER BY id DESC LIMIT {limit}"
         cur.execute(sql)
-        rows = cur.fetchall()
-        if engine == "mysql":
-            return [dict(r) for r in rows]
-        return [dict(r) for r in rows]
+        rows = [dict(r) for r in cur.fetchall()]
+        for r in rows:
+            if r.get('fecha_registro') is not None and not isinstance(r.get('fecha_registro'), str):
+                r['fecha_registro'] = str(r['fecha_registro'])
+            com_up = (r.get('comunidad') or '').strip().upper()
+            r['area'] = r.get('area') or area_map.get(com_up, 'Sin Zona')
+        return rows
     finally:
         conn.close()
 
@@ -1606,18 +1627,66 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
     finally:
         conn.close()
 
-def get_inventarios_herramientas(limit=200):
-    """Retorna la lista de auditorías de inventario más recientes incluyendo su lista de detalles."""
+HERRAMIENTAS_OFICIALES = [
+    "Cortadora de precisión",
+    "Striper",
+    "Kit de limpieza",
+    "Lápiz limpiador",
+    "Cortacables",
+    "Alcohol isopropílico",
+    "Toallas limpiadoras",
+    "Power Meter",
+    "Ponchadora UTP",
+    "Probador UTP"
+]
+
+def get_inventarios_herramientas(limit=500, region=None, aliado=None, comunidad=None, area=None):
+    """Retorna la lista de auditorías de inventario más recientes incluyendo su lista de detalles y enriqueciendo Zona (area)."""
     conn, engine = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute(f"SELECT * FROM inventarios_herramientas ORDER BY id DESC LIMIT {int(limit)}")
+        placeholder = "%s" if engine == "mysql" else "?"
+
+        # Mapa de comunidad -> area por si algún registro no tenía área
+        area_map = {}
+        try:
+            cur.execute("SELECT DISTINCT comunidad, area FROM base_tecnicos_inventario WHERE comunidad IS NOT NULL AND comunidad != '' AND area IS NOT NULL AND area != ''")
+            for r in cur.fetchall():
+                c_val = (r['comunidad'] if engine == "mysql" else r[0]).strip().upper()
+                a_val = (r['area'] if engine == "mysql" else r[1]).strip()
+                if c_val and a_val:
+                    area_map[c_val] = a_val
+        except Exception:
+            pass
+
+        where_clauses = []
+        params = []
+        if region:
+            where_clauses.append(f"region = {placeholder}")
+            params.append(region)
+        if aliado:
+            where_clauses.append(f"aliado = {placeholder}")
+            params.append(aliado)
+        if comunidad:
+            where_clauses.append(f"LOWER(comunidad) = LOWER({placeholder})")
+            params.append(comunidad)
+
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+        cur.execute(f"SELECT * FROM inventarios_herramientas {where_sql} ORDER BY id DESC LIMIT {int(limit)}", tuple(params))
         rows = [dict(r) for r in cur.fetchall()]
         if not rows:
             return []
 
-        placeholder = "%s" if engine == "mysql" else "?"
+        filtered_rows = []
         for r in rows:
+            if r.get('fecha_registro') is not None and not isinstance(r.get('fecha_registro'), str):
+                r['fecha_registro'] = str(r['fecha_registro'])
+            com_up = (r.get('comunidad') or '').strip().upper()
+            if not r.get('area'):
+                r['area'] = area_map.get(com_up, '')
+            if area and (r.get('area') or '').strip().upper() != area.strip().upper():
+                continue
+
             cur.execute(
                 f"SELECT herramienta, estado, novedad, evidencia_path FROM inventarios_herramientas_detalle WHERE inventario_id = {placeholder} ORDER BY id ASC",
                 (r['id'],)
@@ -1628,15 +1697,33 @@ def get_inventarios_herramientas(limit=200):
                 dd['foto_path'] = dd.get('evidencia_path') or ''
                 dets.append(dd)
             r['detalles'] = dets
-        return rows
+            filtered_rows.append(r)
+        return filtered_rows
     finally:
         conn.close()
 
-def get_inventarios_detalle_export(limit=10000):
-    """Retorna el cruce de inventarios con su detalle por herramienta para exportar a Excel."""
+def get_inventarios_detalle_export(limit=20000, region=None, aliado=None, comunidad=None, area=None):
+    """Retorna el cruce de inventarios con su detalle por herramienta para exportar a Excel (con filtros opcionales)."""
     conn, engine = get_connection()
     try:
         cur = conn.cursor()
+        placeholder = "%s" if engine == "mysql" else "?"
+        where_clauses = []
+        params = []
+        if region:
+            where_clauses.append(f"i.region = {placeholder}")
+            params.append(region)
+        if aliado:
+            where_clauses.append(f"i.aliado = {placeholder}")
+            params.append(aliado)
+        if comunidad:
+            where_clauses.append(f"LOWER(i.comunidad) = LOWER({placeholder})")
+            params.append(comunidad)
+        if area:
+            where_clauses.append(f"LOWER(i.area) = LOWER({placeholder})")
+            params.append(area)
+
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
         sql = f"""
             SELECT 
                 i.codigo_auditoria,
@@ -1645,8 +1732,8 @@ def get_inventarios_detalle_export(limit=10000):
                 i.nombre_tecnico,
                 i.aliado,
                 i.region,
-                i.area,
-                i.comunidad,
+                i.area as zona,
+                i.comunidad as ciudad,
                 d.herramienta,
                 d.estado,
                 d.novedad,
@@ -1656,16 +1743,17 @@ def get_inventarios_detalle_export(limit=10000):
                 i.telegram_username
             FROM inventarios_herramientas i
             LEFT JOIN inventarios_herramientas_detalle d ON i.id = d.inventario_id
+            {where_sql}
             ORDER BY i.id DESC, d.id ASC
             LIMIT {int(limit)}
         """
-        cur.execute(sql)
+        cur.execute(sql, tuple(params))
         return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
 
 def get_estadisticas_inventario():
-    """Retorna KPIs y series para las gráficas de la Pestaña de Inventario de Herramientas."""
+    """Retorna KPIs, catálogos de filtros (Región, Aliado, Ciudad, Zona), distribución territorial y cumplimiento por ítem de herramienta."""
     conn, engine = get_connection()
     try:
         cur = conn.cursor()
@@ -1676,6 +1764,66 @@ def get_estadisticas_inventario():
         cur.execute("SELECT COUNT(*) as cnt FROM inventarios_herramientas")
         r_inv = cur.fetchone()
         total_inventarios = r_inv['cnt'] if engine == "mysql" else r_inv[0]
+
+        # Agrupación territorial de técnicos para filtrado dinámico en el frontend
+        cur.execute("""
+            SELECT 
+                COALESCE(region, '') as region,
+                COALESCE(area, '') as area,
+                COALESCE(aliado, '') as aliado,
+                COALESCE(comunidad, '') as comunidad,
+                COUNT(*) as cnt
+            FROM base_tecnicos_inventario
+            GROUP BY region, area, aliado, comunidad
+        """)
+        tecnicos_territorial = []
+        regiones_set = {'R1', 'R2', 'R3', 'R4', 'R5'}
+        zonas_set = set()
+        aliados_set = set()
+        ciudades_set = set()
+
+        for row in cur.fetchall():
+            if engine == "mysql":
+                reg_v = (row['region'] or '').strip()
+                are_v = (row['area'] or '').strip()
+                ali_v = (row['aliado'] or '').strip()
+                com_v = (row['comunidad'] or '').strip()
+                cnt_v = int(row['cnt'] or 0)
+            else:
+                reg_v = (row[0] or '').strip()
+                are_v = (row[1] or '').strip()
+                ali_v = (row[2] or '').strip()
+                com_v = (row[3] or '').strip()
+                cnt_v = int(row[4] or 0)
+
+            if reg_v:
+                regiones_set.add(reg_v)
+            if are_v:
+                zonas_set.add(are_v)
+            if ali_v:
+                aliados_set.add(ali_v)
+            if com_v:
+                ciudades_set.add(com_v)
+
+            tecnicos_territorial.append({
+                'region': reg_v,
+                'zona': are_v,
+                'aliado': ali_v,
+                'ciudad': com_v,
+                'cnt': cnt_v
+            })
+
+        # También agregar cualquier valor presente en inventarios_herramientas o validaciones_vias
+        try:
+            cur.execute("SELECT DISTINCT region, area, aliado, comunidad FROM inventarios_herramientas")
+            for row in cur.fetchall():
+                vals = [row['region'], row['area'], row['aliado'], row['comunidad']] if engine == "mysql" else [row[0], row[1], row[2], row[3]]
+                if vals[0]: regiones_set.add(vals[0].strip())
+                if vals[1]: zonas_set.add(vals[1].strip())
+                if vals[2]: aliados_set.add(vals[2].strip())
+                if vals[3]: ciudades_set.add(vals[3].strip())
+        except Exception:
+            pass
 
         stats = {
             'total_tecnicos_base': total_tecnicos_base,
@@ -1691,14 +1839,28 @@ def get_estadisticas_inventario():
             'estado_values': [0, 0, 0],
             'novedades_labels': ['No funciona', 'Funciona parcialmente', 'Deterioro físico', 'Falta accesorio'],
             'novedades_values': [0, 0, 0, 0],
+            'herramientas_labels': list(HERRAMIENTAS_OFICIALES),
+            'herramientas_ok_values': [0] * len(HERRAMIENTAS_OFICIALES),
+            'herramientas_nov_values': [0] * len(HERRAMIENTAS_OFICIALES),
+            'herramientas_falt_values': [0] * len(HERRAMIENTAS_OFICIALES),
+            'herramientas_pct_cumplimiento': [0.0] * len(HERRAMIENTAS_OFICIALES),
             'top_tools_labels': [],
             'top_tools_values': [],
             'herramientas_nov_labels': [],
             'herramientas_nov_values': [],
             'regiones_labels': [],
             'regiones_values': [],
+            'zonas_labels': [],
+            'zonas_values': [],
             'aliados_labels': [],
-            'aliados_values': []
+            'aliados_values': [],
+            'filtros': {
+                'regiones': sorted(list(regiones_set)),
+                'zonas': sorted(list(zonas_set)),
+                'aliados': sorted(list(aliados_set)),
+                'ciudades': sorted(list(ciudades_set))
+            },
+            'tecnicos_territorial': tecnicos_territorial
         }
 
         if total_inventarios == 0:
@@ -1731,6 +1893,38 @@ def get_estadisticas_inventario():
         stats['total_evidencias'] = sum_evi
         stats['pct_ok'] = round((sum_ok / sum_tot) * 100, 1) if sum_tot > 0 else 0.0
         stats['estado_values'] = [sum_ok, sum_nov, sum_fal]
+
+        # Cumplimiento detallado por cada una de las 10 herramientas
+        cur.execute("""
+            SELECT herramienta, estado, COUNT(*) as cnt
+            FROM inventarios_herramientas_detalle
+            GROUP BY herramienta, estado
+        """)
+        tool_map = {t: {'OK': 0, 'NOVEDAD': 0, 'FALTANTE': 0} for t in HERRAMIENTAS_OFICIALES}
+        for r in cur.fetchall():
+            h_name = (r['herramienta'] if engine == "mysql" else r[0]) or ''
+            st_val = ((r['estado'] if engine == "mysql" else r[1]) or 'OK').upper()
+            cnt_val = int((r['cnt'] if engine == "mysql" else r[2]) or 0)
+            if h_name not in tool_map:
+                tool_map[h_name] = {'OK': 0, 'NOVEDAD': 0, 'FALTANTE': 0}
+            if st_val in tool_map[h_name]:
+                tool_map[h_name][st_val] += cnt_val
+
+        ok_arr, nov_arr, falt_arr, pct_arr = [], [], [], []
+        for t in HERRAMIENTAS_OFICIALES:
+            c_ok = tool_map[t]['OK']
+            c_nov = tool_map[t]['NOVEDAD']
+            c_fal = tool_map[t]['FALTANTE']
+            c_tot = c_ok + c_nov + c_fal
+            ok_arr.append(c_ok)
+            nov_arr.append(c_nov)
+            falt_arr.append(c_fal)
+            pct_arr.append(round((c_ok / c_tot) * 100, 1) if c_tot > 0 else 0.0)
+
+        stats['herramientas_ok_values'] = ok_arr
+        stats['herramientas_nov_values'] = nov_arr
+        stats['herramientas_falt_values'] = falt_arr
+        stats['herramientas_pct_cumplimiento'] = pct_arr
 
         def fetch_counts(query):
             cur.execute(query)
@@ -1771,12 +1965,21 @@ def get_estadisticas_inventario():
         stats['regiones_labels'] = [r[0] for r in regs]
         stats['regiones_values'] = [r[1] for r in regs]
 
+        # Por Zona (Area)
+        zons = fetch_counts("""
+            SELECT COALESCE(NULLIF(area, ''), 'Sin Zona') as label, COUNT(*) as cnt 
+            FROM inventarios_herramientas 
+            GROUP BY label ORDER BY cnt DESC LIMIT 10
+        """)
+        stats['zonas_labels'] = [z[0] for z in zons]
+        stats['zonas_values'] = [z[1] for z in zons]
+
         # Por Aliado
         alis = fetch_counts("""
             SELECT aliado as label, COUNT(*) as cnt 
             FROM inventarios_herramientas 
             WHERE aliado IS NOT NULL AND aliado != ''
-            GROUP BY aliado ORDER BY cnt DESC LIMIT 8
+            GROUP BY aliado ORDER BY cnt DESC LIMIT 10
         """)
         stats['aliados_labels'] = [a[0] for a in alis]
         stats['aliados_values'] = [a[1] for a in alis]
