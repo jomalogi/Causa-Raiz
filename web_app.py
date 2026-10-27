@@ -98,6 +98,14 @@ HTML_TEMPLATE = """
                     {% endif %}
                 </button>
             </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold px-4 py-2" id="tab-inventario" data-bs-toggle="pill" data-bs-target="#content-inventario" type="button" role="tab">
+                    <i class="bi bi-tools me-2"></i>Inventario de Herramientas
+                    {% if stats_inv.total_inventarios > 0 %}
+                        <span class="badge bg-danger ms-2">{{ stats_inv.total_inventarios }}</span>
+                    {% endif %}
+                </button>
+            </li>
         </ul>
 
         <div class="tab-content" id="mainTabContent">
@@ -528,12 +536,241 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
             </div>
+
+            <!-- ======================================================== -->
+            <!-- PESTAÑA 3: INVENTARIO DE HERRAMIENTAS                    -->
+            <!-- ======================================================== -->
+            <div class="tab-pane fade" id="content-inventario" role="tabpanel">
+                <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 p-3 bg-white rounded-3 shadow-sm border-start border-4 border-danger">
+                    <div>
+                        <h4 class="fw-bold mb-1 text-dark"><i class="bi bi-tools text-danger me-2"></i>Auditoría e Inventario de Herramientas</h4>
+                        <p class="text-muted small mb-0">Control nacional de estado de herramientas por técnico, novedades físicas y evidencias fotográficas.</p>
+                    </div>
+                    <div class="d-flex gap-2 mt-2 mt-md-0">
+                        <form action="/cargar_tecnicos_inventario" method="POST" enctype="multipart/form-data" class="d-flex align-items-center gap-2">
+                            <input type="file" name="archivo_tecnicos" accept=".xlsx, .xls" class="form-control form-control-sm" style="max-width: 230px;" required>
+                            <button type="submit" class="btn btn-outline-dark btn-sm text-nowrap">
+                                <i class="bi bi-person-lines-fill me-1"></i>Actualizar Base Técnicos
+                            </button>
+                        </form>
+                        <a href="/descargar_inventarios" class="btn btn-success btn-sm fw-bold px-3 py-2 text-nowrap">
+                            <i class="bi bi-file-earmark-excel me-1"></i>Descargar Excel Inventarios
+                        </a>
+                    </div>
+                </div>
+
+                <!-- KPIs Inventario -->
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <div class="card card-stat p-3 bg-white">
+                            <div class="d-flex align-items-center">
+                                <div class="p-3 bg-secondary bg-opacity-10 text-secondary rounded-3 me-3 fs-3">
+                                    <i class="bi bi-people-fill"></i>
+                                </div>
+                                <div>
+                                    <div class="text-muted small">Técnicos en Base Nacional</div>
+                                    <h3 class="fw-bold mb-0 text-dark">{{ "{:,}".format(stats_inv.total_tecnicos_base or 0) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card card-stat p-3 bg-white">
+                            <div class="d-flex align-items-center">
+                                <div class="p-3 bg-primary bg-opacity-10 text-primary rounded-3 me-3 fs-3">
+                                    <i class="bi bi-clipboard2-check-fill"></i>
+                                </div>
+                                <div>
+                                    <div class="text-muted small">Auditorías Registradas</div>
+                                    <h3 class="fw-bold mb-0 text-dark">{{ stats_inv.total_inventarios }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card card-stat p-3 bg-white">
+                            <div class="d-flex align-items-center">
+                                <div class="p-3 bg-success bg-opacity-10 text-success rounded-3 me-3 fs-3">
+                                    <i class="bi bi-check-circle-fill"></i>
+                                </div>
+                                <div>
+                                    <div class="text-muted small">% Herramientas OK</div>
+                                    <h3 class="fw-bold mb-0 text-dark">{{ stats_inv.pct_ok }}%</h3>
+                                    <div class="text-muted small" style="font-size: 0.78rem;">{{ stats_inv.total_ok }} de {{ stats_inv.total_herramientas_eval }} eval.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card card-stat p-3 bg-white">
+                            <div class="d-flex align-items-center">
+                                <div class="p-3 bg-warning bg-opacity-10 text-warning rounded-3 me-3 fs-3">
+                                    <i class="bi bi-camera-fill"></i>
+                                </div>
+                                <div>
+                                    <div class="text-muted small">Novedades / Evidencias</div>
+                                    <h3 class="fw-bold mb-0 text-dark">{{ stats_inv.total_novedad + stats_inv.total_faltante }}</h3>
+                                    <div class="text-muted small" style="font-size: 0.78rem;">📸 {{ stats_inv.total_evidencias }} fotos cargadas</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gráficos Inventario Fila 1 -->
+                <div class="row g-4 mb-4">
+                    <div class="col-lg-6">
+                        <div class="card card-stat p-3 bg-white h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-bar-chart-fill text-success me-2"></i>1. Estado de Herramientas Auditadas</h6>
+                                <span class="badge bg-light text-dark">Consolidado</span>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="chartInvEstado"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="card card-stat p-3 bg-white h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-exclamation-diamond-fill text-warning me-2"></i>2. Tipos de Novedad Presentados</h6>
+                                <span class="badge bg-light text-dark">Daño / Deterioro</span>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="chartInvNovedades"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gráficos Inventario Fila 2 -->
+                <div class="row g-4 mb-4">
+                    <div class="col-lg-6">
+                        <div class="card card-stat p-3 bg-white h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-pie-chart-fill text-primary me-2"></i>3. Inventarios por Región</h6>
+                                <span class="badge bg-primary bg-opacity-10 text-primary">Dona / Región</span>
+                            </div>
+                            <div class="chart-container" style="position: relative; height: 280px;">
+                                <canvas id="chartInvRegiones"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="card card-stat p-3 bg-white h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-wrench-adjustable-circle-fill text-danger me-2"></i>4. Herramientas con Más Novedades o Faltantes</h6>
+                                <span class="badge bg-danger bg-opacity-10 text-danger">Top Herramientas</span>
+                            </div>
+                            <div class="chart-container" style="position: relative; height: 280px;">
+                                <canvas id="chartInvTopTools"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabla de Auditorías de Inventario -->
+                <div class="card card-stat mb-4">
+                    <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center">
+                        <div>
+                            <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-list-check me-2 text-danger"></i>Auditorías de Inventario Registradas</h5>
+                            <p class="text-muted small mb-0">Detalle de inventarios cerrados con código de auditoría y evidencias fotográficas.</p>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped align-middle mb-0 small">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Código Auditoría</th>
+                                        <th>Fecha</th>
+                                        <th>Técnico</th>
+                                        <th>Aliado</th>
+                                        <th>Ciudad / Región</th>
+                                        <th>Resumen</th>
+                                        <th>Detalle Novedades / Faltantes</th>
+                                        <th>Foto General</th>
+                                        <th>Supervisor</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if inventarios %}
+                                        {% for inv in inventarios %}
+                                            <tr>
+                                                <td><span class="badge bg-dark font-monospace">{{ inv.codigo_auditoria }}</span></td>
+                                                <td class="text-nowrap">{{ inv.fecha_registro }}</td>
+                                                <td>
+                                                    <div class="fw-bold text-dark">{{ inv.nombre_tecnico }}</div>
+                                                    <small class="text-muted">CC: {{ inv.cedula_tecnico }}</small>
+                                                </td>
+                                                <td>{{ inv.aliado }}</td>
+                                                <td>
+                                                    {{ inv.comunidad }}<br>
+                                                    <span class="badge bg-light text-dark border">{{ inv.region }}</span>
+                                                    {% if inv.area %}<span class="badge bg-secondary bg-opacity-10 text-secondary">{{ inv.area }}</span>{% endif %}
+                                                </td>
+                                                <td class="text-nowrap">
+                                                    <span class="badge bg-success me-1">✅ {{ inv.herramientas_ok }} OK</span>
+                                                    <span class="badge bg-warning text-dark me-1">⚠️ {{ inv.herramientas_novedad }} Nov</span>
+                                                    <span class="badge bg-danger">❌ {{ inv.herramientas_faltantes }} Falt</span>
+                                                </td>
+                                                <td style="max-width: 280px;">
+                                                    {% set ns = namespace(has_nov=false) %}
+                                                    {% for d in inv.detalles %}
+                                                        {% if d.estado == 'NOVEDAD' %}
+                                                            {% set ns.has_nov = true %}
+                                                            <div class="mb-1">
+                                                                <span class="badge bg-warning text-dark">⚠️ {{ d.herramienta }}: {{ d.novedad }}</span>
+                                                                {% if d.foto_path %}
+                                                                    <a href="/{{ d.foto_path }}" target="_blank" class="badge bg-primary text-decoration-none ms-1">
+                                                                        <i class="bi bi-image"></i> Ver foto
+                                                                    </a>
+                                                                {% endif %}
+                                                            </div>
+                                                        {% elif d.estado == 'FALTANTE' %}
+                                                            {% set ns.has_nov = true %}
+                                                            <div class="mb-1">
+                                                                <span class="badge bg-danger">❌ {{ d.herramienta }}: no disponible</span>
+                                                            </div>
+                                                        {% endif %}
+                                                    {% endfor %}
+                                                    {% if not ns.has_nov %}
+                                                        <span class="text-success fw-semibold"><i class="bi bi-check2-all"></i> Sin novedades</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>
+                                                    {% if inv.foto_general_path %}
+                                                        <a href="/{{ inv.foto_general_path }}" target="_blank" class="btn btn-outline-primary btn-sm py-0 px-2">
+                                                            <i class="bi bi-camera me-1"></i>Ver General
+                                                        </a>
+                                                    {% else %}
+                                                        <span class="text-muted">-</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>{{ inv.telegram_nombre }} <br><small class="text-muted">@{{ inv.telegram_username }}</small></td>
+                                            </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td colspan="9" class="text-center py-4 text-muted">
+                                                <i class="bi bi-inbox fs-2 d-block mb-1"></i>
+                                                Aún no se han registrado auditorías de inventario de herramientas.
+                                            </td>
+                                        </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const statsVias = {{ stats_vias | tojson }};
+        const statsInv = {{ stats_inv | tojson }};
 
         // Registrar ChartDataLabels si está disponible desde CDN, o usar fallback canvas integrado
         if (typeof ChartDataLabels !== 'undefined') {
@@ -831,16 +1068,147 @@ HTML_TEMPLATE = """
                 },
                 options: buildBarOptions('Ocurrencias')
             });
+
+            // 9. Chart Inventario: Estado General
+            new Chart(document.getElementById('chartInvEstado'), {
+                type: 'bar',
+                data: {
+                    labels: statsInv.estado_labels,
+                    datasets: [{
+                        label: 'Herramientas',
+                        data: statsInv.estado_values,
+                        backgroundColor: ['#198754', '#fd7e14', '#dc3545'],
+                        borderRadius: 6
+                    }]
+                },
+                options: buildBarOptions('Herramientas')
+            });
+
+            // 10. Chart Inventario: Novedades
+            new Chart(document.getElementById('chartInvNovedades'), {
+                type: 'bar',
+                data: {
+                    labels: statsInv.novedades_labels,
+                    datasets: [{
+                        label: 'Novedades',
+                        data: statsInv.novedades_values,
+                        backgroundColor: ['#dc3545', '#fd7e14', '#ffc107', '#0d6efd'],
+                        borderRadius: 6
+                    }]
+                },
+                options: buildBarOptions('Novedades')
+            });
+
+            // 11. Chart Inventario: Regiones (Dona)
+            new Chart(document.getElementById('chartInvRegiones'), {
+                type: 'doughnut',
+                data: {
+                    labels: statsInv.regiones_labels.length ? statsInv.regiones_labels : ['Sin datos'],
+                    datasets: [{
+                        label: 'Inventarios',
+                        data: statsInv.regiones_values.length ? statsInv.regiones_values : [0],
+                        backgroundColor: coloresRegiones,
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'right',
+                            labels: {
+                                boxWidth: 14,
+                                padding: 10,
+                                font: {
+                                    size: 11,
+                                    family: "'Segoe UI', Tahoma, sans-serif"
+                                },
+                                generateLabels: function(chart) {
+                                    const data = chart.data;
+                                    if (data.labels.length && data.datasets.length) {
+                                        const dataset = data.datasets[0];
+                                        const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+                                        return data.labels.map((label, i) => {
+                                            const val = Number(dataset.data[i]) || 0;
+                                            const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
+                                            const fill = dataset.backgroundColor[i % dataset.backgroundColor.length];
+                                            return {
+                                                text: `${label}: ${val} (${pct})`,
+                                                fillStyle: fill,
+                                                strokeStyle: fill,
+                                                lineWidth: 1,
+                                                hidden: isNaN(dataset.data[i]) || (chart.getDatasetMeta(0).data[i] && chart.getDatasetMeta(0).data[i].hidden),
+                                                index: i
+                                            };
+                                        });
+                                    }
+                                    return [];
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const val = Number(context.raw) || 0;
+                                    const dataset = context.dataset;
+                                    const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+                                    const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
+                                    return ` ${context.label}: ${val} (${pct})`;
+                                }
+                            }
+                        },
+                        datalabels: {
+                            anchor: 'center',
+                            align: 'center',
+                            color: '#ffffff',
+                            font: {
+                                weight: 'bold',
+                                size: 11,
+                                family: "'Segoe UI', Tahoma, sans-serif"
+                            },
+                            formatter: function(value, context) {
+                                if (!value || value === 0) return '';
+                                const dataset = context.chart.data.datasets[0];
+                                const total = dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+                                if (total === 0) return value;
+                                const pct = ((value / total) * 100).toFixed(1) + '%';
+                                return `${value} (${pct})`;
+                            }
+                        }
+                    },
+                    cutout: '55%'
+                }
+            });
+
+            // 12. Chart Inventario: Top Herramientas con Novedad/Faltante
+            new Chart(document.getElementById('chartInvTopTools'), {
+                type: 'bar',
+                data: {
+                    labels: statsInv.top_tools_labels.length ? statsInv.top_tools_labels : ['Sin novedades registradas'],
+                    datasets: [{
+                        label: 'Incidencias',
+                        data: statsInv.top_tools_values.length ? statsInv.top_tools_values : [0],
+                        backgroundColor: '#da291c',
+                        borderRadius: 6
+                    }]
+                },
+                options: buildBarOptions('Incidencias')
+            });
         }
 
         document.addEventListener('DOMContentLoaded', () => {
             initCharts();
-            const viasTab = document.getElementById('tab-vias-onnet');
-            if (viasTab) {
-                viasTab.addEventListener('shown.bs.tab', () => {
-                    window.dispatchEvent(new Event('resize'));
-                });
-            }
+            ['tab-vias-onnet', 'tab-inventario'].forEach(tabId => {
+                const el = document.getElementById(tabId);
+                if (el) {
+                    el.addEventListener('shown.bs.tab', () => {
+                        window.dispatchEvent(new Event('resize'));
+                    });
+                }
+            });
         });
     </script>
 </body>
@@ -853,12 +1221,16 @@ def index():
     hallazgos = db.get_ultimos_hallazgos(limit=50)
     stats_vias = db.get_estadisticas_vias()
     validaciones_vias = db.get_validaciones_vias(limit=50)
+    stats_inv = db.get_estadisticas_inventario()
+    inventarios = db.get_inventarios_herramientas(limit=50)
     return render_template_string(
         HTML_TEMPLATE,
         stats=stats,
         hallazgos=hallazgos,
         stats_vias=stats_vias,
-        validaciones_vias=validaciones_vias
+        validaciones_vias=validaciones_vias,
+        stats_inv=stats_inv,
+        inventarios=inventarios
     )
 
 @app.route("/cargar_visitas", methods=["POST"])
@@ -914,6 +1286,22 @@ def cargar_matriz():
         flash(f"Error cargando la matriz: {e}", "danger")
     return redirect(url_for("index"))
 
+@app.route("/cargar_tecnicos_inventario", methods=["POST"])
+def cargar_tecnicos_inventario():
+    file = request.files.get("archivo_tecnicos")
+    if not file or file.filename == "":
+        flash("No se seleccionó ningún archivo de técnicos.", "warning")
+        return redirect(url_for("index"))
+
+    dest = UPLOAD_DIR / f"Base_Tecnicos_Inventario_{int(time.time())}.xlsx"
+    file.save(str(dest))
+    try:
+        total = db.cargar_tecnicos_inventario_excel(str(dest))
+        flash(f"¡Base Nacional de Técnicos actualizada con éxito! {total:,} técnicos cargados.", "success")
+    except Exception as e:
+        flash(f"Error procesando la base de técnicos: {e}", "danger")
+    return redirect(url_for("index"))
+
 @app.route("/descargar_hallazgos")
 def descargar_hallazgos():
     hallazgos = db.get_ultimos_hallazgos(limit=10000)
@@ -960,16 +1348,55 @@ def descargar_validaciones_vias():
         download_name=filename
     )
 
+@app.route("/descargar_inventarios")
+def descargar_inventarios():
+    inventarios = db.get_inventarios_herramientas(limit=10000)
+    if not inventarios:
+        flash("No hay inventarios registrados para exportar.", "info")
+        return redirect(url_for("index"))
+
+    resumen_rows = []
+    for inv in inventarios:
+        r = {k: v for k, v in inv.items() if k != 'detalles'}
+        resumen_rows.append(r)
+
+    detalles_rows = db.get_inventarios_detalle_export(limit=50000)
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        pd.DataFrame(resumen_rows).to_excel(writer, sheet_name="Resumen_Auditorias", index=False)
+        if detalles_rows:
+            pd.DataFrame(detalles_rows).to_excel(writer, sheet_name="Detalle_Herramientas", index=False)
+    output.seek(0)
+
+    filename = f"Inventarios_Herramientas_{time.strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename
+    )
+
+@app.route("/evidencias/<path:filename>")
+def ver_evidencia(filename):
+    clean_name = Path(filename).name
+    file_path = UPLOAD_DIR / "evidencias" / clean_name
+    if not file_path.exists():
+        return "Archivo de evidencia no encontrado", 404
+    return send_file(str(file_path), mimetype="image/jpeg")
+
 @app.route("/api/status")
 def api_status():
     stats = db.get_estadisticas()
     stats_vias = db.get_estadisticas_vias()
+    stats_inv = db.get_estadisticas_inventario()
     return jsonify({
         "status": "online",
         "port": 8505,
         "bot": "@causaraiz_bot",
         "stats": stats,
-        "stats_vias": stats_vias
+        "stats_vias": stats_vias,
+        "stats_inv": stats_inv
     })
 
 if __name__ == "__main__":

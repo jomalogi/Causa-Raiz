@@ -1,10 +1,14 @@
 import os
+import io
+import re
 import sys
 import time
 import json
+import datetime
 import logging
 import requests
 from pathlib import Path
+from PIL import Image
 
 import db
 
@@ -19,6 +23,10 @@ logger = logging.getLogger("BotCalidad")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8978005290:AAHkQcCm8dnIrHJ9lnNFNAUZElVZ6OghN9k")
 API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
+# Carpeta para evidencias fotográficas comprimidas de inventario
+EVIDENCIAS_DIR = Path(__file__).resolve().parent / "uploads" / "evidencias"
+EVIDENCIAS_DIR.mkdir(parents=True, exist_ok=True)
+
 # Opciones de error para Validación Cambio de Vías Onnet
 ERRORES_CAMBIO_VIAS = [
     "Error Consumiendo el servicio Resources",
@@ -28,53 +36,34 @@ ERRORES_CAMBIO_VIAS = [
     "Sin puertos Disponibles"
 ]
 
+# Lista oficial de herramientas para el Inventario de Herramientas
+HERRAMIENTAS_INVENTARIO = [
+    "Cortadora de precisión",
+    "Striper",
+    "Kit de limpieza",
+    "Lápiz limpiador",
+    "Cortacables",
+    "Alcohol isopropílico",
+    "Toallas limpiadoras",
+    "Power Meter",
+    "Ponchadora UTP",
+    "Probador UTP"
+]
+
+# Opciones de novedad cuando una herramienta está en mal estado / dañada
+NOVEDADES_HERRAMIENTAS = [
+    ("🔴 No funciona", "No funciona"),
+    ("🟠 Funciona parcialmente", "Funciona parcialmente"),
+    ("🟡 Deterioro físico", "Deterioro físico"),
+    ("🔵 Falta accesorio", "Falta accesorio")
+]
+
 # Diccionario para almacenar el estado de la conversación por usuario
 # chat_id -> dict
 USER_SESSIONS = {}
 
-def get_session(chat_id):
-    if chat_id not in USER_SESSIONS:
-        USER_SESSIONS[chat_id] = {
-            'step': 'START',
-            'region': None,
-            'red': None,
-            'aliado': None,
-            'segmento': None,
-            'comunidad': None,
-            'rango': None,
-            'primera_lls': None,
-            'visita': None,
-            'causa_idx': None,
-            'causa_nombre': None,
-            'subcausa_nombre': None,
-            'manual_ot': None,
-            'manual_cuenta': None,
-            'manual_segmento': None,
-            'manual_proveedor_red': None,
-            'is_manual': False,
-            'vias_cuenta': None,
-            'vias_auto': None,
-            'vias_exito': None,
-            'vias_error': None,
-            'vias_tiempo': None,
-            'vias_exp': None,
-            'page_ali': 0,
-            'page_com': 0,
-            'page_lls': 0,
-            'page_cau': 0,
-            # Cache de listas activas para indexacion rapida y segura en callback_data
-            'aliados_list': [],
-            'segmentos_list': [],
-            'comunidades_list': [],
-            'rangos_list': [],
-            'llamadas_list': [],
-            'causas_list': [],
-            'subcausas_list': []
-        }
-    return USER_SESSIONS[chat_id]
-
-def reset_session(chat_id):
-    USER_SESSIONS[chat_id] = {
+def _default_session():
+    return {
         'step': 'START',
         'region': None,
         'red': None,
@@ -102,14 +91,34 @@ def reset_session(chat_id):
         'page_com': 0,
         'page_lls': 0,
         'page_cau': 0,
+        # Cache de listas activas para indexacion rapida y segura en callback_data
         'aliados_list': [],
         'segmentos_list': [],
         'comunidades_list': [],
         'rangos_list': [],
         'llamadas_list': [],
         'causas_list': [],
-        'subcausas_list': []
+        'subcausas_list': [],
+        # Estado de Inventario de Herramientas
+        'inv_tecnico': None,
+        'inv_items': {},
+        'inv_current_idx': 0,
+        'inv_foto_general': None,
+        'inv_editing_from_summary': False,
+        'inv_aliados_list': [],
+        'inv_ciudades_list': [],
+        'inv_ciudades_all_regions': False,
+        'page_inv_ali': 0,
+        'page_inv_ciu': 0
     }
+
+def get_session(chat_id):
+    if chat_id not in USER_SESSIONS:
+        USER_SESSIONS[chat_id] = _default_session()
+    return USER_SESSIONS[chat_id]
+
+def reset_session(chat_id):
+    USER_SESSIONS[chat_id] = _default_session()
     return USER_SESSIONS[chat_id]
 
 # -------------------------------------------------------------
@@ -121,32 +130,46 @@ def send_message(chat_id, text, reply_markup=None, parse_mode="Markdown"):
     url = f"{API_URL}/sendMessage"
     payload = {
         "chat_id": chat_id,
-        "text": text,
-        "parse_mode": parse_mode
+        "text": text
     }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     if reply_markup:
         payload["reply_markup"] = reply_markup
     try:
         resp = requests.post(url, json=payload, timeout=10)
-        return resp.json()
+        res_json = resp.json()
+        if not res_json.get("ok") and parse_mode:
+            payload.pop("parse_mode", None)
+            resp = requests.post(url, json=payload, timeout=10)
+            res_json = resp.json()
+        return res_json
     except Exception as e:
         logger.error(f"Error al enviar mensaje a {chat_id}: {e}")
         return None
 
 def edit_message(chat_id, message_id, text, reply_markup=None, parse_mode="Markdown"):
     """Edita el texto y botones de un mensaje existente."""
+    if not message_id:
+        return send_message(chat_id, text, reply_markup, parse_mode)
     url = f"{API_URL}/editMessageText"
     payload = {
         "chat_id": chat_id,
         "message_id": message_id,
-        "text": text,
-        "parse_mode": parse_mode
+        "text": text
     }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     if reply_markup:
         payload["reply_markup"] = reply_markup
     try:
         resp = requests.post(url, json=payload, timeout=10)
-        return resp.json()
+        res_json = resp.json()
+        if not res_json.get("ok") and parse_mode:
+            payload.pop("parse_mode", None)
+            resp = requests.post(url, json=payload, timeout=10)
+            res_json = resp.json()
+        return res_json
     except Exception as e:
         logger.error(f"Error al editar mensaje {message_id}: {e}")
         return None
@@ -163,6 +186,48 @@ def answer_callback_query(callback_query_id, text=None, show_alert=False):
     except Exception as e:
         logger.error(f"Error answer_callback_query: {e}")
 
+def descargar_y_comprimir_foto(file_id, prefix="inv"):
+    """Descarga una imagen desde Telegram, la comprime en JPEG y retorna la ruta relativa."""
+    try:
+        r_info = requests.get(f"{API_URL}/getFile", params={"file_id": file_id}, timeout=15).json()
+        if not r_info.get("ok"):
+            logger.error(f"Error getFile Telegram: {r_info}")
+            return None
+        file_path_tg = r_info["result"]["file_path"]
+        file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path_tg}"
+        r_bytes = requests.get(file_url, timeout=25)
+        if r_bytes.status_code != 200:
+            logger.error(f"Error descargando foto de Telegram HTTP {r_bytes.status_code}")
+            return None
+
+        img = Image.open(io.BytesIO(r_bytes.content))
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+
+        img.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
+        ts_str = db.now_colombia_str().replace("-", "").replace(":", "").replace(" ", "_")
+        filename = f"{prefix}_{ts_str}_{int(time.time() * 1000) % 10000}.jpg"
+        out_path = EVIDENCIAS_DIR / filename
+        img.save(out_path, format="JPEG", quality=72, optimize=True)
+        return f"evidencias/{filename}"
+    except Exception as e:
+        logger.error(f"Error al descargar/comprimir foto: {e}")
+        return None
+
+def render_progress_bar(current_step, total_steps=10):
+    """Genera una barra de avance visual para el inventario."""
+    pct = int(round((current_step / total_steps) * 100))
+    filled = int(round((current_step / total_steps) * 10))
+    empty = 10 - filled
+    bar = "█" * filled + "░" * empty
+    return f"📊 *Avance:* `[{bar}]` *{pct}%* ({current_step}/{total_steps})"
+
+def _is_missing_val(val):
+    if val is None:
+        return True
+    s = str(val).strip()
+    return s == "" or s.upper() in ("NA", "N/A", "NAN", "NONE", "NULL", "0", "SIN DATO")
+
 # -------------------------------------------------------------
 # Pantallas y Vistas del Bot
 # -------------------------------------------------------------
@@ -175,8 +240,8 @@ def view_seleccionar_region(chat_id, message_id=None, first_name="Supervisor"):
     if not regiones:
         texto = (
             f"👋 ¡Hola *{first_name}*!\n\n"
-            "⚠️ *No hay registros de visitas disponibles en este momento.*\n"
-            "Por favor asegúrate de que se haya cargado la base diaria `Visitas_Calidad.xlsx`."
+            "⚠️ *No hay registros disponibles en este momento.*\n"
+            "Por favor asegúrate de que se haya cargado la base en el sistema."
         )
         markup = {"inline_keyboard": [[{"text": "🔄 Reintentar", "callback_data": "nav:restart"}]]}
         if message_id:
@@ -188,7 +253,7 @@ def view_seleccionar_region(chat_id, message_id=None, first_name="Supervisor"):
     session['step'] = 'SELECT_REGION'
     
     texto = (
-        f"👋 ¡Hola *{first_name}*! Bienvenido al *Bot de Causa Raíz de Calidad*.\n\n"
+        f"👋 ¡Hola *{first_name}*! Bienvenido al *Bot de Gestión de Calidad*.\n\n"
         "📍 Para comenzar, por favor selecciona la *Región*:"
     )
     
@@ -210,6 +275,494 @@ def view_seleccionar_region(chat_id, message_id=None, first_name="Supervisor"):
     else:
         send_message(chat_id, texto, markup)
 
+def view_seleccionar_modulo_region(chat_id, message_id=None):
+    """Paso 1.5: Después de seleccionar la Región, elegir entre Causa Raíz o Inventario de Herramientas."""
+    session = get_session(chat_id)
+    region = session.get('region') or ''
+    session['step'] = 'SELECT_MODULO_REGION'
+
+    texto = (
+        f"📍 Región seleccionada: *{region}*\n\n"
+        "🛠️ *Selecciona la opción que deseas gestionar:*"
+    )
+    keyboard = [
+        [{"text": "🔍 Causa Raíz", "callback_data": "mod_reg:causa_raiz"}],
+        [{"text": "🧰 Inventario de Herramientas", "callback_data": "mod_reg:inventario"}],
+        [{"text": "⬅️ Cambiar Región", "callback_data": "nav:restart"}]
+    ]
+    markup = {"inline_keyboard": keyboard}
+    edit_message(chat_id, message_id, texto, markup)
+
+# -------------------------------------------------------------
+# Vistas del Módulo: Inventario de Herramientas
+# -------------------------------------------------------------
+
+def view_inv_pedir_cedula(chat_id, message_id=None):
+    """Solicita el número de cédula del técnico para iniciar el inventario."""
+    session = get_session(chat_id)
+    region = session.get('region') or ''
+    session['step'] = 'INV_CEDULA'
+    session['inv_tecnico'] = None
+    session['inv_items'] = {}
+    session['inv_current_idx'] = 0
+    session['inv_foto_general'] = None
+    session['inv_editing_from_summary'] = False
+
+    texto = (
+        "🧰 *INVENTARIO DE HERRAMIENTAS*\n"
+        f"📍 Región seleccionada: *{region}*\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "🪪 Por favor digita y envía el *Número de Cédula* del técnico:"
+    )
+    keyboard = [
+        [{"text": "⬅️ Volver", "callback_data": "nav:back_mod_reg"}]
+    ]
+    markup = {"inline_keyboard": keyboard}
+    edit_message(chat_id, message_id, texto, markup)
+
+def view_inv_ficha_tecnico(chat_id, message_id=None):
+    """Muestra la información del técnico y permite actualizar Aliado, Ciudad, Región o Nombre si falta o está errado."""
+    session = get_session(chat_id)
+    session['step'] = 'INV_FICHA_TECNICO'
+    tec = session.get('inv_tecnico') or {}
+
+    cedula = tec.get('cedula', '')
+    nombre = tec.get('nombre_tecnico', '')
+    aliado = tec.get('aliado', '')
+    region = tec.get('region', '')
+    ciudad = tec.get('comunidad', '')
+    area = tec.get('area', '')
+
+    falta_nombre = _is_missing_val(nombre)
+    falta_aliado = _is_missing_val(aliado)
+    falta_region = _is_missing_val(region)
+    falta_ciudad = _is_missing_val(ciudad)
+    datos_completos = not (falta_nombre or falta_aliado or falta_region or falta_ciudad)
+
+    nombre_txt = nombre if not falta_nombre else "⚠️ _En blanco / Sin dato_"
+    aliado_txt = aliado if not falta_aliado else "⚠️ _En blanco / Sin dato_"
+    region_txt = region if not falta_region else "⚠️ _En blanco / Sin dato_"
+    ciudad_txt = ciudad if not falta_ciudad else "⚠️ _En blanco / Sin dato_"
+    area_txt = area if not _is_missing_val(area) else "N/D"
+
+    aviso_estado = ""
+    if not tec.get('en_base', True):
+        aviso_estado = "ℹ️ _La cédula no estaba en la base inicial. Por favor completa los datos del técnico para registrarlo._\n\n"
+    elif not datos_completos:
+        aviso_estado = "⚠️ *Algunos datos están en blanco o NA.* Por favor actualízalos antes de iniciar el inventario.\n\n"
+    else:
+        aviso_estado = "✅ _Verifica los datos del técnico. Si alguno está errado puedes corregirlo o continuar al inventario._\n\n"
+
+    texto = (
+        "🧰 *INFORMACIÓN DEL TÉCNICO*\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🪪 *Cédula:* `{cedula}`\n"
+        f"👷 *Nombre:* {nombre_txt}\n"
+        f"🤝 *Aliado:* {aliado_txt}\n"
+        f"🗺️ *Región:* {region_txt}\n"
+        f"🏙️ *Ciudad:* {ciudad_txt}\n"
+        f"📍 *Zona / Área:* {area_txt}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{aviso_estado}"
+    )
+
+    keyboard = []
+    if datos_completos:
+        if session.get('inv_editing_from_summary'):
+            keyboard.append([{"text": "✅ Volver al Resumen del Inventario", "callback_data": "inv_act:resumen"}])
+        else:
+            keyboard.append([{"text": "▶️ Iniciar Inventario de Herramientas", "callback_data": "inv_act:start_tools"}])
+
+    keyboard.append([
+        {"text": ("⚠️ " if falta_aliado else "✏️ ") + "Actualizar Aliado", "callback_data": "inv_edit:aliado"},
+        {"text": ("⚠️ " if falta_ciudad else "✏️ ") + "Actualizar Ciudad", "callback_data": "inv_edit:ciudad"}
+    ])
+    keyboard.append([
+        {"text": ("⚠️ " if falta_region else "✏️ ") + "Actualizar Región", "callback_data": "inv_edit:region"},
+        {"text": ("⚠️ " if falta_nombre else "✏️ ") + "Corregir Nombre", "callback_data": "inv_edit:nombre"}
+    ])
+    keyboard.append([{"text": "🪪 Consultar otra Cédula", "callback_data": "mod_reg:inventario"}])
+    keyboard.append([{"text": "🏠 Menú Principal", "callback_data": "nav:restart"}])
+
+    markup = {"inline_keyboard": keyboard}
+    edit_message(chat_id, message_id, texto, markup)
+
+def view_inv_pedir_nombre(chat_id, message_id=None):
+    """Solicita escribir el nombre del técnico para actualizarlo."""
+    session = get_session(chat_id)
+    session['step'] = 'INV_NOMBRE'
+    tec = session.get('inv_tecnico') or {}
+
+    texto = (
+        "👷 *ACTUALIZAR NOMBRE DEL TÉCNICO*\n"
+        f"🪪 *Cédula:* `{tec.get('cedula', '')}`\n\n"
+        "✍️ Por favor escribe en el chat el *Nombre Completo* del técnico:"
+    )
+    markup = {"inline_keyboard": [[{"text": "⬅️ Cancelar", "callback_data": "inv_act:ficha"}]]}
+    edit_message(chat_id, message_id, texto, markup)
+
+def view_inv_seleccionar_region(chat_id, message_id=None):
+    """Permite seleccionar/actualizar la Región del técnico."""
+    session = get_session(chat_id)
+    session['step'] = 'INV_SELECT_REGION'
+    regiones = db.get_regiones()
+
+    texto = (
+        "🗺️ *ACTUALIZAR REGIÓN DEL TÉCNICO*\n\n"
+        "Selecciona la *Región* correspondiente:"
+    )
+    keyboard = []
+    row = []
+    for reg in regiones:
+        row.append({"text": f"📍 {reg}", "callback_data": f"inv_set_reg:{reg}"})
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    keyboard.append([{"text": "⬅️ Volver a Datos del Técnico", "callback_data": "inv_act:ficha"}])
+    edit_message(chat_id, message_id, texto, {"inline_keyboard": keyboard})
+
+def view_inv_seleccionar_aliado(chat_id, message_id=None, page=0):
+    """Lista los aliados conocidos de la BD para actualizar el aliado del técnico."""
+    session = get_session(chat_id)
+    session['step'] = 'INV_SELECT_ALIADO'
+    aliados = db.get_aliados_inventario(region=None)
+    session['inv_aliados_list'] = aliados
+    session['page_inv_ali'] = page
+
+    ITEMS_PER_PAGE = 8
+    total_pages = max(1, (len(aliados) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+    page = max(0, min(page, total_pages - 1))
+    start_idx = page * ITEMS_PER_PAGE
+    end_idx = min(start_idx + ITEMS_PER_PAGE, len(aliados))
+    page_items = aliados[start_idx:end_idx]
+
+    texto = (
+        "🤝 *ACTUALIZAR ALIADO DEL TÉCNICO*\n"
+        f"Selecciona el *Aliado* de la base de datos (Página {page + 1} de {total_pages}):"
+    )
+    keyboard = []
+    for idx_in_page, ali in enumerate(page_items):
+        global_idx = start_idx + idx_in_page
+        keyboard.append([{"text": f"🤝 {ali}", "callback_data": f"inv_set_ali:{global_idx}"}])
+
+    nav_row = []
+    if page > 0:
+        nav_row.append({"text": "◀️ Anterior", "callback_data": f"p_inv_ali:{page - 1}"})
+    if page < total_pages - 1:
+        nav_row.append({"text": "Siguiente ▶️", "callback_data": f"p_inv_ali:{page + 1}"})
+    if nav_row:
+        keyboard.append(nav_row)
+
+    keyboard.append([{"text": "⬅️ Volver a Datos del Técnico", "callback_data": "inv_act:ficha"}])
+    edit_message(chat_id, message_id, texto, {"inline_keyboard": keyboard})
+
+def view_inv_seleccionar_ciudad(chat_id, message_id=None, page=0, search_query=None):
+    """Lista las ciudades conocidas de la BD para actualizar la ciudad del técnico."""
+    session = get_session(chat_id)
+    session['step'] = 'INV_SELECT_CIUDAD'
+    tec = session.get('inv_tecnico') or {}
+    reg_filter = None if session.get('inv_ciudades_all_regions') else (tec.get('region') or session.get('region'))
+
+    ciudades = db.get_ciudades_inventario(region=reg_filter)
+    if not ciudades and reg_filter:
+        ciudades = db.get_ciudades_inventario(region=None)
+        session['inv_ciudades_all_regions'] = True
+        reg_filter = None
+
+    if search_query:
+        q = search_query.strip().upper()
+        ciudades = [c for c in ciudades if q in c.upper()]
+
+    session['inv_ciudades_list'] = ciudades
+    session['page_inv_ciu'] = page
+
+    ITEMS_PER_PAGE = 10
+    total_pages = max(1, (len(ciudades) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+    page = max(0, min(page, total_pages - 1))
+    start_idx = page * ITEMS_PER_PAGE
+    end_idx = min(start_idx + ITEMS_PER_PAGE, len(ciudades))
+    page_items = ciudades[start_idx:end_idx]
+
+    scope_txt = f"Región {reg_filter}" if reg_filter else "Nacional"
+    filtro_txt = f" | Filtro: `{search_query}`" if search_query else ""
+    texto = (
+        f"🏙️ *ACTUALIZAR CIUDAD DEL TÉCNICO* ({scope_txt}{filtro_txt})\n"
+        f"Selecciona la *Ciudad* o escribe parte del nombre en el chat para buscar (Página {page + 1} de {total_pages}):"
+    )
+
+    keyboard = []
+    row = []
+    for idx_in_page, ciu in enumerate(page_items):
+        global_idx = start_idx + idx_in_page
+        row.append({"text": f"🏙️ {ciu}", "callback_data": f"inv_set_ciu:{global_idx}"})
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+
+    nav_row = []
+    if page > 0:
+        nav_row.append({"text": "◀️ Anterior", "callback_data": f"p_inv_ciu:{page - 1}"})
+    if page < total_pages - 1:
+        nav_row.append({"text": "Siguiente ▶️", "callback_data": f"p_inv_ciu:{page + 1}"})
+    if nav_row:
+        keyboard.append(nav_row)
+
+    if reg_filter:
+        keyboard.append([{"text": "🌐 Ver ciudades de todas las regiones", "callback_data": "inv_ciu_scope:all"}])
+    else:
+        keyboard.append([{"text": f"📍 Filtrar por región actual ({tec.get('region') or session.get('region')})", "callback_data": "inv_ciu_scope:reg"}])
+
+    keyboard.append([{"text": "⬅️ Volver a Datos del Técnico", "callback_data": "inv_act:ficha"}])
+    edit_message(chat_id, message_id, texto, {"inline_keyboard": keyboard})
+
+def view_inv_herramienta(chat_id, idx, message_id=None):
+    """Muestra la evaluación de la herramienta #idx con barra de avance."""
+    session = get_session(chat_id)
+    total = len(HERRAMIENTAS_INVENTARIO)
+    if idx < 0 or idx >= total:
+        view_inv_foto_general(chat_id, message_id)
+        return
+
+    session['step'] = 'INV_EVAL_TOOL'
+    session['inv_current_idx'] = idx
+    tool_name = HERRAMIENTAS_INVENTARIO[idx]
+    tec = session.get('inv_tecnico') or {}
+    bar_str = render_progress_bar(idx + 1, total)
+
+    actual = session.get('inv_items', {}).get(idx)
+    estado_previo = ""
+    if actual:
+        st_lbl = "✅ OK" if actual['estado'] == 'OK' else (f"⚠️ {actual.get('novedad')}" if actual['estado'] == 'NOVEDAD' else "❌ Faltante")
+        estado_previo = f"\n_(Estado actual registrado: {st_lbl})_\n"
+
+    texto = (
+        "🧰 *INVENTARIO DE HERRAMIENTAS*\n"
+        f"👷 *Técnico:* {tec.get('nombre_tecnico', '')}\n"
+        f"{bar_str}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🔧 *Herramienta {idx + 1} de {total}:*\n"
+        f"👉 *{tool_name}*\n"
+        f"{estado_previo}\n"
+        "Selecciona el estado de la herramienta:"
+    )
+
+    keyboard = [
+        [{"text": "✅ OK (Buen estado)", "callback_data": f"inv_st:{idx}:OK"}],
+        [{"text": "⚠️ Con novedad / Dañado", "callback_data": f"inv_st:{idx}:NOVEDAD"}],
+        [{"text": "❌ Faltante / No disponible", "callback_data": f"inv_st:{idx}:FALTANTE"}]
+    ]
+
+    if session.get('inv_editing_from_summary'):
+        keyboard.append([{"text": "⬅️ Volver al Resumen", "callback_data": "inv_act:resumen"}])
+    elif idx > 0:
+        keyboard.append([{"text": "⬅️ Herramienta anterior", "callback_data": f"inv_tool:{idx - 1}"}])
+    else:
+        keyboard.append([{"text": "⬅️ Volver a Datos del Técnico", "callback_data": "inv_act:ficha"}])
+
+    edit_message(chat_id, message_id, texto, {"inline_keyboard": keyboard})
+
+def view_inv_novedad(chat_id, idx, message_id=None):
+    """Pregunta ¿Qué novedad presenta? cuando la herramienta está dañada."""
+    session = get_session(chat_id)
+    total = len(HERRAMIENTAS_INVENTARIO)
+    session['step'] = 'INV_SELECT_NOVEDAD'
+    session['inv_current_idx'] = idx
+    tool_name = HERRAMIENTAS_INVENTARIO[idx]
+    bar_str = render_progress_bar(idx + 1, total)
+
+    texto = (
+        "🧰 *INVENTARIO DE HERRAMIENTAS*\n"
+        f"{bar_str}\n"
+        f"🔧 *Herramienta:* {tool_name}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "*¿Qué novedad presenta?*"
+    )
+
+    keyboard = []
+    for nov_idx, (btn_label, _) in enumerate(NOVEDADES_HERRAMIENTAS):
+        keyboard.append([{"text": btn_label, "callback_data": f"inv_nov:{idx}:{nov_idx}"}])
+
+    keyboard.append([{"text": "⬅️ Volver a la herramienta", "callback_data": f"inv_tool:{idx}"}])
+    edit_message(chat_id, message_id, texto, {"inline_keyboard": keyboard})
+
+def view_inv_foto_herramienta(chat_id, idx, message_id=None):
+    """Solicita tomar o subir una foto de la herramienta con novedad."""
+    session = get_session(chat_id)
+    total = len(HERRAMIENTAS_INVENTARIO)
+    session['step'] = 'INV_FOTO_TOOL'
+    session['inv_current_idx'] = idx
+    tool_name = HERRAMIENTAS_INVENTARIO[idx]
+    item = session.get('inv_items', {}).get(idx, {})
+    nov_txt = item.get('novedad', 'Con novedad')
+    bar_str = render_progress_bar(idx + 1, total)
+
+    texto = (
+        "📸 *EVIDENCIA DE HERRAMIENTA EN MAL ESTADO*\n"
+        f"{bar_str}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔧 *Herramienta:* {tool_name}\n"
+        f"⚠️ *Novedad:* {nov_txt}\n\n"
+        "📷 *Por favor toma o envía una foto de la herramienta:*\n"
+        "_(La imagen se comprimirá automáticamente al subirla)_"
+    )
+    keyboard = [
+        [{"text": "⬅️ Cambiar tipo de novedad", "callback_data": f"inv_st:{idx}:NOVEDAD"}]
+    ]
+    edit_message(chat_id, message_id, texto, {"inline_keyboard": keyboard})
+
+def view_inv_foto_general(chat_id, message_id=None):
+    """Solicita una foto general de toda la herramienta inventariada al finalizar."""
+    session = get_session(chat_id)
+    total = len(HERRAMIENTAS_INVENTARIO)
+    session['step'] = 'INV_FOTO_GENERAL'
+    bar_str = render_progress_bar(total, total)
+
+    texto = (
+        "📸 *FOTO GENERAL DEL INVENTARIO*\n"
+        f"{bar_str}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "📷 *Para finalizar, por favor toma y envía una foto general de toda la herramienta inventariada:*\n"
+        "_(La imagen se comprimirá automáticamente al subirla)_"
+    )
+    keyboard = []
+    if session.get('inv_editing_from_summary') and session.get('inv_foto_general'):
+        keyboard.append([{"text": "⬅️ Volver al Resumen", "callback_data": "inv_act:resumen"}])
+    else:
+        keyboard.append([{"text": "⬅️ Volver a la última herramienta", "callback_data": f"inv_tool:{total - 1}"}])
+
+    edit_message(chat_id, message_id, texto, {"inline_keyboard": keyboard})
+
+def view_inv_resumen(chat_id, message_id=None):
+    """Muestra el resumen completo del inventario antes de confirmar."""
+    session = get_session(chat_id)
+    session['step'] = 'INV_RESUMEN'
+    session['inv_editing_from_summary'] = False
+
+    tec = session.get('inv_tecnico') or {}
+    items_dict = session.get('inv_items') or {}
+
+    ok_count = 0
+    nov_count = 0
+    falt_count = 0
+    evidencias_count = 1 if session.get('inv_foto_general') else 0
+    lineas_novedades = []
+
+    for idx, tool_name in enumerate(HERRAMIENTAS_INVENTARIO):
+        it = items_dict.get(idx, {'herramienta': tool_name, 'estado': 'OK', 'novedad': None, 'foto_path': None})
+        st = it.get('estado', 'OK')
+        if it.get('foto_path'):
+            evidencias_count += 1
+        if st == 'OK':
+            ok_count += 1
+        elif st == 'NOVEDAD':
+            nov_count += 1
+            nov_desc = (it.get('novedad') or 'deterioro').lower()
+            lineas_novedades.append(f"⚠️ {tool_name}: {nov_desc}")
+        elif st == 'FALTANTE':
+            falt_count += 1
+            lineas_novedades.append(f"❌ {tool_name}: no disponible")
+
+    now_col = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=5)
+    fecha_str = now_col.strftime("%d/%m/%Y")
+
+    bloque_novedades = "\n".join(lineas_novedades) if lineas_novedades else "✅ Sin novedades"
+
+    texto = (
+        "📋 *Resumen del inventario*\n\n"
+        f"Técnico: {tec.get('nombre_tecnico', '')}\n"
+        f"Fecha: {fecha_str}\n\n"
+        f"✅ {ok_count} herramientas OK\n"
+        f"⚠️ {nov_count} herramientas con novedad\n"
+        f"❌ {falt_count} herramienta{'s' if falt_count != 1 else ''} faltante{'s' if falt_count != 1 else ''}\n"
+        f"📸 {evidencias_count} evidencias cargadas\n\n"
+        "*Novedades*\n\n"
+        f"{bloque_novedades}"
+    )
+
+    keyboard = [
+        [{"text": "✅ Confirmar inventario", "callback_data": "inv_act:confirmar"}],
+        [{"text": "✏️ Corregir", "callback_data": "inv_act:corregir"}]
+    ]
+    edit_message(chat_id, message_id, texto, {"inline_keyboard": keyboard})
+
+def view_inv_menu_corregir(chat_id, message_id=None):
+    """Permite elegir qué herramienta, foto general o dato del técnico corregir desde el resumen."""
+    session = get_session(chat_id)
+    session['step'] = 'INV_CORREGIR'
+    session['inv_editing_from_summary'] = True
+    items_dict = session.get('inv_items') or {}
+
+    texto = (
+        "✏️ *CORREGIR INVENTARIO*\n\n"
+        "Selecciona la herramienta o sección que deseas modificar:"
+    )
+
+    keyboard = []
+    for idx, tool_name in enumerate(HERRAMIENTAS_INVENTARIO):
+        it = items_dict.get(idx, {})
+        st = it.get('estado', 'OK')
+        icon = "✅" if st == 'OK' else ("⚠️" if st == 'NOVEDAD' else "❌")
+        keyboard.append([{"text": f"{icon} {idx + 1}. {tool_name}", "callback_data": f"inv_tool:{idx}"}])
+
+    keyboard.append([{"text": "📸 Cambiar foto general", "callback_data": "inv_act:foto_general"}])
+    keyboard.append([{"text": "👷 Corregir datos del técnico", "callback_data": "inv_act:ficha"}])
+    keyboard.append([{"text": "⬅️ Volver al Resumen", "callback_data": "inv_act:resumen"}])
+
+    edit_message(chat_id, message_id, texto, {"inline_keyboard": keyboard})
+
+def view_inv_confirmar_guardar(chat_id, from_user, message_id=None):
+    """Guarda el inventario en la BD, genera el código de auditoría y muestra el mensaje final."""
+    session = get_session(chat_id)
+    tec = session.get('inv_tecnico') or {}
+    items_dict = session.get('inv_items') or {}
+
+    items_list = []
+    for idx, tool_name in enumerate(HERRAMIENTAS_INVENTARIO):
+        it = items_dict.get(idx, {'herramienta': tool_name, 'estado': 'OK', 'novedad': None, 'foto_path': None})
+        items_list.append(it)
+
+    user_info = from_user or {}
+    nombre_sup = f"{user_info.get('first_name', '')} {user_info.get('last_name', '')}".strip() or "Supervisor"
+    username_sup = user_info.get('username', '')
+
+    payload = {
+        'telegram_user_id': chat_id,
+        'telegram_username': username_sup,
+        'telegram_nombre': nombre_sup,
+        'cedula_tecnico': tec.get('cedula', ''),
+        'nombre_tecnico': tec.get('nombre_tecnico', ''),
+        'aliado': tec.get('aliado', ''),
+        'region': tec.get('region') or session.get('region', ''),
+        'comunidad': tec.get('comunidad', ''),
+        'area': tec.get('area', ''),
+        'foto_general_path': session.get('inv_foto_general'),
+        'items': items_list
+    }
+
+    res = db.guardar_inventario_herramientas(payload)
+    session['step'] = 'INV_DONE'
+
+    novedades_encontradas = res['herramientas_novedad'] + res['herramientas_faltantes']
+
+    texto = (
+        "✅ *Inventario registrado correctamente*\n\n"
+        f"Código: `{res['codigo_auditoria']}`\n\n"
+        f"Herramientas registradas: {res['total_herramientas']}\n"
+        f"Novedades encontradas: {novedades_encontradas}\n"
+        f"Evidencias: {res['evidencias_cargadas']}\n\n"
+        "Gracias."
+    )
+
+    keyboard = [
+        [{"text": "🧰 Nuevo Inventario de Herramientas", "callback_data": "mod_reg:inventario"}],
+        [{"text": "🏠 Menú Principal", "callback_data": "nav:restart"}]
+    ]
+    edit_message(chat_id, message_id, texto, {"inline_keyboard": keyboard})
+
 def view_seleccionar_red(chat_id, message_id=None):
     """Paso 2: Solicitar Red para la Región elegida."""
     session = get_session(chat_id)
@@ -218,7 +771,7 @@ def view_seleccionar_red(chat_id, message_id=None):
     
     if not redes:
         texto = f"⚠️ No se encontraron tipos de Red para la Región *{region}*."
-        markup = {"inline_keyboard": [[{"text": "⬅️ Cambiar Región", "callback_data": "nav:restart"}]]}
+        markup = {"inline_keyboard": [[{"text": "⬅️ Volver", "callback_data": "nav:back_mod_reg"}]]}
         edit_message(chat_id, message_id, texto, markup)
         return
 
@@ -232,7 +785,7 @@ def view_seleccionar_red(chat_id, message_id=None):
     keyboard = []
     for r in redes:
         keyboard.append([{"text": f"📶 {r}", "callback_data": f"red:{r}"}])
-    keyboard.append([{"text": "⬅️ Cambiar Región", "callback_data": "nav:restart"}])
+    keyboard.append([{"text": "⬅️ Volver", "callback_data": "nav:back_mod_reg"}])
     
     markup = {"inline_keyboard": keyboard}
     edit_message(chat_id, message_id, texto, markup)
@@ -1172,11 +1725,182 @@ def handle_callback(update):
         view_seleccionar_causa(chat_id, message_id, page)
         return
 
-    # Selección Región
+    # Selección Región -> Ahora muestra opciones: Causa Raíz vs Inventario de Herramientas
     if data.startswith("reg:"):
         region = data.split(":", 1)[1]
         session['region'] = region
-        view_seleccionar_red(chat_id, message_id)
+        view_seleccionar_modulo_region(chat_id, message_id)
+        return
+
+    if data == "nav:back_mod_reg":
+        view_seleccionar_modulo_region(chat_id, message_id)
+        return
+
+    # Selección de Módulo tras elegir Región
+    if data.startswith("mod_reg:"):
+        opt = data.split(":", 1)[1]
+        if opt == "causa_raiz":
+            view_seleccionar_red(chat_id, message_id)
+        elif opt == "inventario":
+            view_inv_pedir_cedula(chat_id, message_id)
+        return
+
+    # ---------------------------------------------------------
+    # Callbacks Módulo: Inventario de Herramientas
+    # ---------------------------------------------------------
+    if data == "inv_act:ficha":
+        view_inv_ficha_tecnico(chat_id, message_id)
+        return
+
+    if data == "inv_act:start_tools":
+        session['inv_editing_from_summary'] = False
+        view_inv_herramienta(chat_id, 0, message_id)
+        return
+
+    if data == "inv_act:foto_general":
+        view_inv_foto_general(chat_id, message_id)
+        return
+
+    if data == "inv_act:resumen":
+        view_inv_resumen(chat_id, message_id)
+        return
+
+    if data == "inv_act:corregir":
+        view_inv_menu_corregir(chat_id, message_id)
+        return
+
+    if data == "inv_act:confirmar":
+        view_inv_confirmar_guardar(chat_id, from_user, message_id)
+        return
+
+    if data == "inv_edit:aliado":
+        view_inv_seleccionar_aliado(chat_id, message_id, 0)
+        return
+
+    if data == "inv_edit:ciudad":
+        session['inv_ciudades_all_regions'] = False
+        view_inv_seleccionar_ciudad(chat_id, message_id, 0)
+        return
+
+    if data == "inv_edit:region":
+        view_inv_seleccionar_region(chat_id, message_id)
+        return
+
+    if data == "inv_edit:nombre":
+        view_inv_pedir_nombre(chat_id, message_id)
+        return
+
+    if data.startswith("p_inv_ali:"):
+        page = int(data.split(":", 1)[1])
+        view_inv_seleccionar_aliado(chat_id, message_id, page)
+        return
+
+    if data.startswith("p_inv_ciu:"):
+        page = int(data.split(":", 1)[1])
+        view_inv_seleccionar_ciudad(chat_id, message_id, page)
+        return
+
+    if data.startswith("inv_ciu_scope:"):
+        scope = data.split(":", 1)[1]
+        session['inv_ciudades_all_regions'] = (scope == "all")
+        view_inv_seleccionar_ciudad(chat_id, message_id, 0)
+        return
+
+    if data.startswith("inv_set_reg:"):
+        reg = data.split(":", 1)[1]
+        tec = session.get('inv_tecnico') or {}
+        tec['region'] = reg
+        session['region'] = reg
+        session['inv_tecnico'] = tec
+        if tec.get('cedula'):
+            db.upsert_tecnico_inventario(tec)
+            tec['en_base'] = True
+        view_inv_ficha_tecnico(chat_id, message_id)
+        return
+
+    if data.startswith("inv_set_ali:"):
+        idx = int(data.split(":", 1)[1])
+        aliados = session.get('inv_aliados_list') or []
+        if 0 <= idx < len(aliados):
+            tec = session.get('inv_tecnico') or {}
+            tec['aliado'] = aliados[idx]
+            session['inv_tecnico'] = tec
+            if tec.get('cedula'):
+                db.upsert_tecnico_inventario(tec)
+                tec['en_base'] = True
+        view_inv_ficha_tecnico(chat_id, message_id)
+        return
+
+    if data.startswith("inv_set_ciu:"):
+        idx = int(data.split(":", 1)[1])
+        ciudades = session.get('inv_ciudades_list') or []
+        if 0 <= idx < len(ciudades):
+            ciu = ciudades[idx]
+            tec = session.get('inv_tecnico') or {}
+            tec['comunidad'] = ciu
+            area_db = db.get_area_por_ciudad(ciu)
+            if area_db:
+                tec['area'] = area_db
+            session['inv_tecnico'] = tec
+            if tec.get('cedula'):
+                db.upsert_tecnico_inventario(tec)
+                tec['en_base'] = True
+        view_inv_ficha_tecnico(chat_id, message_id)
+        return
+
+    if data.startswith("inv_tool:"):
+        idx = int(data.split(":", 1)[1])
+        view_inv_herramienta(chat_id, idx, message_id)
+        return
+
+    if data.startswith("inv_st:"):
+        parts = data.split(":")
+        idx = int(parts[1])
+        estado = parts[2]
+        tool_name = HERRAMIENTAS_INVENTARIO[idx]
+        if estado == "OK":
+            session['inv_items'][idx] = {
+                'herramienta': tool_name,
+                'estado': 'OK',
+                'novedad': None,
+                'foto_path': None
+            }
+            if session.get('inv_editing_from_summary') and session.get('inv_foto_general'):
+                view_inv_resumen(chat_id, message_id)
+            elif idx + 1 < len(HERRAMIENTAS_INVENTARIO):
+                view_inv_herramienta(chat_id, idx + 1, message_id)
+            else:
+                view_inv_foto_general(chat_id, message_id)
+        elif estado == "FALTANTE":
+            session['inv_items'][idx] = {
+                'herramienta': tool_name,
+                'estado': 'FALTANTE',
+                'novedad': 'no disponible',
+                'foto_path': None
+            }
+            if session.get('inv_editing_from_summary') and session.get('inv_foto_general'):
+                view_inv_resumen(chat_id, message_id)
+            elif idx + 1 < len(HERRAMIENTAS_INVENTARIO):
+                view_inv_herramienta(chat_id, idx + 1, message_id)
+            else:
+                view_inv_foto_general(chat_id, message_id)
+        elif estado == "NOVEDAD":
+            view_inv_novedad(chat_id, idx, message_id)
+        return
+
+    if data.startswith("inv_nov:"):
+        parts = data.split(":")
+        idx = int(parts[1])
+        nov_idx = int(parts[2])
+        tool_name = HERRAMIENTAS_INVENTARIO[idx]
+        _, nov_label = NOVEDADES_HERRAMIENTAS[nov_idx]
+        session['inv_items'][idx] = {
+            'herramienta': tool_name,
+            'estado': 'NOVEDAD',
+            'novedad': nov_label,
+            'foto_path': None
+        }
+        view_inv_foto_herramienta(chat_id, idx, message_id)
         return
 
     # Selección Red -> Ahora pasa a seleccionar Aliado
@@ -1376,12 +2100,19 @@ def handle_message(update):
 
     chat_id = message["chat"]["id"]
     from_user = message.get("from", {})
-    text = message.get("text", "").strip()
-
-    logger.info(f"Mensaje recibido de {from_user.get('username')}: '{text}'")
+    text = (message.get("text") or message.get("caption") or "").strip()
 
     session = get_session(chat_id)
     step = session.get('step')
+
+    # Extraer foto si el mensaje contiene imagen
+    file_id_foto = None
+    if message.get("photo"):
+        file_id_foto = message["photo"][-1]["file_id"]
+    elif message.get("document") and str(message["document"].get("mime_type", "")).startswith("image/"):
+        file_id_foto = message["document"]["file_id"]
+
+    logger.info(f"Mensaje recibido de {from_user.get('username')} (step={step}): text='{text}', has_photo={bool(file_id_foto)}")
 
     # Si el usuario envía comandos de reinicio
     if text.lower() in ["/start", "/inicio", "/reiniciar", "/reset"]:
@@ -1389,9 +2120,112 @@ def handle_message(update):
         view_seleccionar_region(chat_id, None, first_name)
         return
 
+    # ---------------------------------------------------------
+    # Mensajes y Fotos del Módulo: Inventario de Herramientas
+    # ---------------------------------------------------------
+    if step == 'INV_CEDULA':
+        digits = re.sub(r"\D", "", text)
+        if not digits:
+            send_message(
+                chat_id,
+                "⚠️ *Número de Cédula inválido.*\n"
+                "Por favor digita el número de cédula del técnico (solo números):",
+                {"inline_keyboard": [[{"text": "⬅️ Volver", "callback_data": "nav:back_mod_reg"}]]}
+            )
+            return
+        tec = db.get_tecnico_by_cedula(digits)
+        if tec:
+            tec['en_base'] = True
+            if _is_missing_val(tec.get('region')) and session.get('region'):
+                tec['region'] = session['region']
+        else:
+            tec = {
+                'cedula': digits,
+                'nombre_tecnico': '',
+                'aliado': '',
+                'region': session.get('region') or '',
+                'comunidad': '',
+                'area': '',
+                'en_base': False
+            }
+        session['inv_tecnico'] = tec
+        view_inv_ficha_tecnico(chat_id)
+        return
+
+    if step == 'INV_NOMBRE':
+        nombre_clean = text.strip().upper()
+        if len(nombre_clean) < 3:
+            send_message(
+                chat_id,
+                "⚠️ Por favor escribe el *Nombre Completo* válido del técnico:",
+                {"inline_keyboard": [[{"text": "⬅️ Cancelar", "callback_data": "inv_act:ficha"}]]}
+            )
+            return
+        tec = session.get('inv_tecnico') or {}
+        tec['nombre_tecnico'] = nombre_clean
+        session['inv_tecnico'] = tec
+        if tec.get('cedula'):
+            db.upsert_tecnico_inventario(tec)
+            tec['en_base'] = True
+        view_inv_ficha_tecnico(chat_id)
+        return
+
+    if step == 'INV_SELECT_CIUDAD' and text:
+        view_inv_seleccionar_ciudad(chat_id, None, 0, search_query=text)
+        return
+
+    if step == 'INV_FOTO_TOOL':
+        idx = session.get('inv_current_idx', 0)
+        if not file_id_foto:
+            send_message(
+                chat_id,
+                "⚠️ *Imagen requerida.*\n"
+                f"Por favor toma o adjunta una *foto* de la herramienta *{HERRAMIENTAS_INVENTARIO[idx]}*:",
+                {"inline_keyboard": [[{"text": "⬅️ Cambiar tipo de novedad", "callback_data": f"inv_st:{idx}:NOVEDAD"}]]}
+            )
+            return
+        foto_rel = descargar_y_comprimir_foto(file_id_foto, prefix=f"tool_{idx + 1}")
+        if not foto_rel:
+            send_message(
+                chat_id,
+                "⚠️ No se pudo procesar la foto. Por favor intenta enviarla nuevamente:",
+                {"inline_keyboard": [[{"text": "⬅️ Cambiar tipo de novedad", "callback_data": f"inv_st:{idx}:NOVEDAD"}]]}
+            )
+            return
+        if idx in session['inv_items']:
+            session['inv_items'][idx]['foto_path'] = foto_rel
+
+        if session.get('inv_editing_from_summary') and session.get('inv_foto_general'):
+            view_inv_resumen(chat_id)
+        elif idx + 1 < len(HERRAMIENTAS_INVENTARIO):
+            view_inv_herramienta(chat_id, idx + 1)
+        else:
+            view_inv_foto_general(chat_id)
+        return
+
+    if step == 'INV_FOTO_GENERAL':
+        total = len(HERRAMIENTAS_INVENTARIO)
+        if not file_id_foto:
+            send_message(
+                chat_id,
+                "⚠️ *Foto general requerida.*\n"
+                "Por favor toma o adjunta una *foto general de toda la herramienta inventariada*:",
+                {"inline_keyboard": [[{"text": "⬅️ Volver a la última herramienta", "callback_data": f"inv_tool:{total - 1}"}]]}
+            )
+            return
+        foto_rel = descargar_y_comprimir_foto(file_id_foto, prefix="general")
+        if not foto_rel:
+            send_message(
+                chat_id,
+                "⚠️ No se pudo procesar la foto general. Por favor intenta enviarla nuevamente:"
+            )
+            return
+        session['inv_foto_general'] = foto_rel
+        view_inv_resumen(chat_id)
+        return
+
     # Si está en el paso de ingresar OT manual
     if step == 'MANUAL_OT':
-        import re
         digits = re.sub(r"\D", "", text)
         if not digits:
             send_message(
@@ -1407,7 +2241,6 @@ def handle_message(update):
 
     # Si está en el paso de ingresar Cuenta manual
     if step == 'MANUAL_CUENTA':
-        import re
         digits = re.sub(r"\D", "", text)
         if not digits:
             send_message(
@@ -1423,7 +2256,6 @@ def handle_message(update):
 
     # Si está en el paso de ingresar Cuenta para Validación Cambio de Vías Onnet
     if step == 'VIAS_CUENTA':
-        import re
         digits = re.sub(r"\D", "", text)
         if not digits:
             send_message(

@@ -120,3 +120,64 @@ CREATE TABLE IF NOT EXISTS `validacion_cambio_vias_onnet` (
     INDEX `idx_vias_fecha` (`fecha_registro`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 6. Tabla Base Nacional de Técnicos para Inventario (Base_Tecnicos_Inventario.xlsx)
+CREATE TABLE IF NOT EXISTS `base_tecnicos_inventario` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `cedula` BIGINT NOT NULL UNIQUE,
+    `nombre_tecnico` VARCHAR(200) NOT NULL,
+    `fecha_ingreso` VARCHAR(50) NULL,
+    `antiguedad` VARCHAR(100) NULL,
+    `aliado` VARCHAR(150) NULL,
+    `region` VARCHAR(50) NULL,
+    `area` VARCHAR(150) NULL,
+    `comunidad` VARCHAR(150) NULL,
+    `owner` VARCHAR(200) NULL,
+    `q30` VARCHAR(100) NULL,
+    `fecha_actualizacion` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_tec_cedula` (`cedula`),
+    INDEX `idx_tec_region` (`region`),
+    INDEX `idx_tec_aliado` (`aliado`),
+    INDEX `idx_tec_comunidad` (`comunidad`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 7. Tabla Cabecera de Auditorías de Inventario de Herramientas
+CREATE TABLE IF NOT EXISTS `inventarios_herramientas` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `codigo_auditoria` VARCHAR(50) NOT NULL UNIQUE,
+    `fecha_registro` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `telegram_user_id` BIGINT NOT NULL,
+    `telegram_username` VARCHAR(100) NULL,
+    `telegram_nombre` VARCHAR(150) NULL,
+    `cedula_tecnico` BIGINT NOT NULL,
+    `nombre_tecnico` VARCHAR(200) NOT NULL,
+    `aliado` VARCHAR(150) NULL,
+    `region` VARCHAR(50) NULL,
+    `area` VARCHAR(150) NULL,
+    `comunidad` VARCHAR(150) NULL,
+    `total_herramientas` INT NOT NULL DEFAULT 10,
+    `herramientas_ok` INT NOT NULL DEFAULT 0,
+    `herramientas_novedad` INT NOT NULL DEFAULT 0,
+    `herramientas_faltantes` INT NOT NULL DEFAULT 0,
+    `total_evidencias` INT NOT NULL DEFAULT 0,
+    `foto_general_path` VARCHAR(300) NULL,
+    `resumen_novedades` TEXT NULL,
+    `observaciones` TEXT NULL,
+    INDEX `idx_inv_codigo` (`codigo_auditoria`),
+    INDEX `idx_inv_cedula` (`cedula_tecnico`),
+    INDEX `idx_inv_region` (`region`),
+    INDEX `idx_inv_fecha` (`fecha_registro`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 8. Tabla Detalle por Herramienta de cada Inventario
+CREATE TABLE IF NOT EXISTS `inventarios_herramientas_detalle` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `inventario_id` BIGINT NOT NULL,
+    `codigo_auditoria` VARCHAR(50) NOT NULL,
+    `herramienta` VARCHAR(100) NOT NULL,
+    `estado` VARCHAR(50) NOT NULL,
+    `novedad` VARCHAR(100) NULL,
+    `evidencia_path` VARCHAR(300) NULL,
+    INDEX `idx_invdet_inv_id` (`inventario_id`),
+    INDEX `idx_invdet_codigo` (`codigo_auditoria`),
+    CONSTRAINT `fk_invdet_inventario` FOREIGN KEY (`inventario_id`) REFERENCES `inventarios_herramientas`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

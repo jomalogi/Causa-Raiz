@@ -17,6 +17,10 @@ SQLITE_PATH = Path(__file__).resolve().parent / "calidad_visitas.db"
 
 _CURRENT_ENGINE = None
 
+def now_colombia_str():
+    """Retorna la fecha y hora actual de Colombia (UTC-5) en formato YYYY-MM-DD HH:MM:SS."""
+    return (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+
 def get_connection():
     global _CURRENT_ENGINE
     if DB_TYPE.lower() == "mysql" and _CURRENT_ENGINE != "sqlite":
@@ -190,12 +194,66 @@ def init_db():
                     observaciones TEXT
                 );
                 """)
+                conn.execute("""
+                CREATE TABLE IF NOT EXISTS base_tecnicos_inventario (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cedula INTEGER NOT NULL UNIQUE,
+                    nombre_tecnico TEXT NOT NULL,
+                    fecha_ingreso TEXT,
+                    antiguedad TEXT,
+                    aliado TEXT,
+                    region TEXT,
+                    area TEXT,
+                    comunidad TEXT,
+                    owner TEXT,
+                    q30 TEXT,
+                    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                conn.execute("""
+                CREATE TABLE IF NOT EXISTS inventarios_herramientas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    codigo_auditoria TEXT NOT NULL UNIQUE,
+                    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    telegram_user_id INTEGER NOT NULL,
+                    telegram_username TEXT,
+                    telegram_nombre TEXT,
+                    cedula_tecnico INTEGER NOT NULL,
+                    nombre_tecnico TEXT NOT NULL,
+                    aliado TEXT,
+                    region TEXT,
+                    area TEXT,
+                    comunidad TEXT,
+                    total_herramientas INTEGER DEFAULT 10,
+                    herramientas_ok INTEGER DEFAULT 0,
+                    herramientas_novedad INTEGER DEFAULT 0,
+                    herramientas_faltantes INTEGER DEFAULT 0,
+                    total_evidencias INTEGER DEFAULT 0,
+                    foto_general_path TEXT,
+                    resumen_novedades TEXT,
+                    observaciones TEXT
+                );
+                """)
+                conn.execute("""
+                CREATE TABLE IF NOT EXISTS inventarios_herramientas_detalle (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    inventario_id INTEGER NOT NULL,
+                    codigo_auditoria TEXT NOT NULL,
+                    herramienta TEXT NOT NULL,
+                    estado TEXT NOT NULL,
+                    novedad TEXT,
+                    evidencia_path TEXT
+                );
+                """)
                 # Indices en SQLite
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_vis_cargue ON visitas_calidad(cargue_id);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_vis_filtros ON visitas_calidad(region, red, comunidad, rango_primer_arreglo);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_vis_lls ON visitas_calidad(primera_lls);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_vias_fecha ON validacion_cambio_vias_onnet(fecha_registro);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_vias_cuenta ON validacion_cambio_vias_onnet(cuenta);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_tec_cedula ON base_tecnicos_inventario(cedula);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_inv_codigo ON inventarios_herramientas(codigo_auditoria);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_inv_cedula ON inventarios_herramientas(cedula_tecnico);")
                 
                 # Migraciones para columnas agregadas posteriormente
                 for col in ["region", "proveedor_red"]:
@@ -210,6 +268,24 @@ def init_db():
             print("[DB] Tablas SQLite inicializadas correctamente.")
     finally:
         conn.close()
+
+    # Autocargar Base_Tecnicos_Inventario.xlsx si la tabla está vacía
+    try:
+        conn2, eng2 = get_connection()
+        cur2 = conn2.cursor()
+        cur2.execute("SELECT COUNT(*) as cnt FROM base_tecnicos_inventario")
+        r2 = cur2.fetchone()
+        cnt_tec = r2['cnt'] if eng2 == "mysql" else r2[0]
+        conn2.close()
+        if cnt_tec == 0:
+            local_tec = Path(__file__).resolve().parent / "Base_Tecnicos_Inventario.xlsx"
+            alt_tec = Path(r"D:\IM\hallazgos\Base_Tecnicos_Inventario.xlsx")
+            if local_tec.exists():
+                cargar_tecnicos_inventario_excel(str(local_tec))
+            elif alt_tec.exists():
+                cargar_tecnicos_inventario_excel(str(alt_tec))
+    except Exception as e:
+        print(f"[DB] Aviso autocarga técnicos: {e}")
 
 def cargar_matriz_excel(excel_path):
     """Carga la matriz de causas y subcausas desde el archivo Excel."""
@@ -381,22 +457,28 @@ def get_latest_cargue_id():
         conn.close()
 
 def get_regiones(cargue_id=None):
-    """Obtiene las regiones distintas en el cargue."""
+    """Obtiene las regiones distintas en el cargue o de la base de técnicos."""
     if not cargue_id:
         cargue_id = get_latest_cargue_id()
-    if not cargue_id:
-        return []
 
     conn, engine = get_connection()
     try:
         cur = conn.cursor()
         placeholder = "%s" if engine == "mysql" else "?"
-        sql = f"SELECT DISTINCT region FROM visitas_calidad WHERE cargue_id = {placeholder} AND region IS NOT NULL AND region != '' ORDER BY region ASC"
-        cur.execute(sql, (cargue_id,))
+        if cargue_id:
+            sql = f"SELECT DISTINCT region FROM visitas_calidad WHERE cargue_id = {placeholder} AND region IS NOT NULL AND region != '' ORDER BY region ASC"
+            cur.execute(sql, (cargue_id,))
+            rows = cur.fetchall()
+            res = [r['region'] for r in rows] if engine == "mysql" else [r[0] for r in rows]
+            if res:
+                return res
+        # Fallback a base_tecnicos_inventario o R1..R5
+        cur.execute("SELECT DISTINCT region FROM base_tecnicos_inventario WHERE region IS NOT NULL AND region != '' ORDER BY region ASC")
         rows = cur.fetchall()
-        if engine == "mysql":
-            return [r['region'] for r in rows]
-        return [r[0] for r in rows]
+        res = [r['region'] for r in rows] if engine == "mysql" else [r[0] for r in rows]
+        return res if res else ['R1', 'R2', 'R3', 'R4', 'R5']
+    except Exception:
+        return ['R1', 'R2', 'R3', 'R4', 'R5']
     finally:
         conn.close()
 
@@ -1071,4 +1153,636 @@ def get_estadisticas_vias():
         return stats
     finally:
         conn.close()
+
+
+# ==============================================================================
+# MÓDULO: BASE DE TÉCNICOS E INVENTARIO DE HERRAMIENTAS
+# ==============================================================================
+
+def _clean_inv_str(val):
+    if pd.isna(val) or val is None:
+        return ""
+    s = str(val).strip()
+    if s.lower() in ("", "0", "0.0", "nan", "none", "null", "na", "n/a", "sin datos"):
+        return ""
+    return s
+
+def _format_inv_ciudad(val):
+    s = _clean_inv_str(val)
+    if not s:
+        return ""
+    res = s.title()
+    res = res.replace("D.C.", "D.C.").replace("D.c.", "D.C.")
+    return res
+
+def cargar_tecnicos_inventario_excel(excel_path):
+    """
+    Carga o actualiza la tabla base_tecnicos_inventario desde Base_Tecnicos_Inventario.xlsx.
+    Unifica CICSA COLOMBIA S.A. -> TABASCO OC, LLC. SUCURSAL COLOMBIA.
+    Mapea: Compañia -> aliado, EO Region -> region, Zona -> area, Ciudad -> comunidad.
+    """
+    print(f"[DB] Cargando Base de Técnicos para Inventario: {excel_path}...")
+    df = pd.read_excel(excel_path)
+
+    # Identificar nombres de columnas con tolerancia a acentos/ñ
+    col_lookup = {}
+    for c in df.columns:
+        cl = c.lower().strip()
+        if "cedula" in cl or "cédula" in cl:
+            col_lookup["cedula"] = c
+        elif "nombre" in cl:
+            col_lookup["nombre_tecnico"] = c
+        elif "ingreso" in cl:
+            col_lookup["fecha_ingreso"] = c
+        elif "antig" in cl:
+            col_lookup["antiguedad"] = c
+        elif "compa" in cl or "aliado" in cl:
+            col_lookup["aliado"] = c
+        elif "region" in cl or "región" in cl:
+            col_lookup["region"] = c
+        elif "zona" in cl or "area" in cl or "área" in cl:
+            col_lookup["area"] = c
+        elif "ciudad" in cl or "comunidad" in cl:
+            col_lookup["comunidad"] = c
+        elif "owner" in cl:
+            col_lookup["owner"] = c
+        elif "q30" in cl:
+            col_lookup["q30"] = c
+
+    aliados_unificar = {
+        "CICSA COLOMBIA S.A.": "TABASCO OC, LLC. SUCURSAL COLOMBIA",
+        "LPS INGENISIRIA SAS": "LPS INGENIERIA SAS"
+    }
+
+    rows_data = []
+    for _, row in df.iterrows():
+        raw_ced = row.get(col_lookup.get("cedula", "Cedula"))
+        try:
+            cedula = int(float(raw_ced))
+        except Exception:
+            continue
+        if cedula <= 0:
+            continue
+
+        nombre = _clean_inv_str(row.get(col_lookup.get("nombre_tecnico", "NombreTecnico"))).upper()
+        if not nombre:
+            nombre = f"TECNICO {cedula}"
+
+        raw_fecha = row.get(col_lookup.get("fecha_ingreso", "Fecha Ingreso"))
+        if pd.notnull(raw_fecha):
+            try:
+                fecha_ingreso = pd.to_datetime(raw_fecha).strftime("%Y-%m-%d")
+            except Exception:
+                fecha_ingreso = _clean_inv_str(raw_fecha)
+        else:
+            fecha_ingreso = ""
+
+        antiguedad = _clean_inv_str(row.get(col_lookup.get("antiguedad", "")))
+        aliado = _clean_inv_str(row.get(col_lookup.get("aliado", ""))).upper()
+        aliado = aliados_unificar.get(aliado, aliado)
+
+        region = _clean_inv_str(row.get(col_lookup.get("region", ""))).upper()
+        area = _format_inv_ciudad(row.get(col_lookup.get("area", "")))
+        comunidad = _format_inv_ciudad(row.get(col_lookup.get("comunidad", "")))
+        owner = _clean_inv_str(row.get(col_lookup.get("owner", ""))).upper()
+        q30 = _clean_inv_str(row.get(col_lookup.get("q30", "")))
+
+        rows_data.append((
+            cedula, nombre, fecha_ingreso, antiguedad,
+            aliado, region, area, comunidad, owner, q30
+        ))
+
+    conn, engine = get_connection()
+    try:
+        if engine == "mysql":
+            with conn.cursor() as cur:
+                sql = """
+                    INSERT INTO base_tecnicos_inventario 
+                    (cedula, nombre_tecnico, fecha_ingreso, antiguedad, aliado, region, area, comunidad, owner, q30)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        nombre_tecnico = VALUES(nombre_tecnico),
+                        fecha_ingreso = VALUES(fecha_ingreso),
+                        antiguedad = VALUES(antiguedad),
+                        aliado = IF(VALUES(aliado) != '', VALUES(aliado), aliado),
+                        region = IF(VALUES(region) != '', VALUES(region), region),
+                        area = IF(VALUES(area) != '', VALUES(area), area),
+                        comunidad = IF(VALUES(comunidad) != '', VALUES(comunidad), comunidad),
+                        owner = VALUES(owner),
+                        q30 = VALUES(q30)
+                """
+                batch_size = 1000
+                for i in range(0, len(rows_data), batch_size):
+                    cur.executemany(sql, rows_data[i:i + batch_size])
+        else:
+            with conn:
+                cur = conn.cursor()
+                sql = """
+                    INSERT OR REPLACE INTO base_tecnicos_inventario
+                    (cedula, nombre_tecnico, fecha_ingreso, antiguedad, aliado, region, area, comunidad, owner, q30)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                cur.executemany(sql, rows_data)
+        print(f"[DB] Base de Técnicos cargada exitosamente: {len(rows_data)} técnicos procesados.")
+        return len(rows_data)
+    finally:
+        conn.close()
+
+def get_tecnico_by_cedula(cedula):
+    """Busca un técnico por número de cédula en base_tecnicos_inventario."""
+    try:
+        cedula_int = int(str(cedula).strip())
+    except Exception:
+        return None
+
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        placeholder = "%s" if engine == "mysql" else "?"
+        cur.execute(f"SELECT * FROM base_tecnicos_inventario WHERE cedula = {placeholder} LIMIT 1", (cedula_int,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        # Asegurar unificación de aliado por si acaso
+        if d.get("aliado") == "CICSA COLOMBIA S.A.":
+            d["aliado"] = "TABASCO OC, LLC. SUCURSAL COLOMBIA"
+        for k in ("aliado", "region", "area", "comunidad", "nombre_tecnico"):
+            d[k] = _clean_inv_str(d.get(k))
+        return d
+    finally:
+        conn.close()
+
+def get_area_por_ciudad(comunidad, region=None):
+    """Busca el Área / Zona asociada a una Ciudad (comunidad) en visitas_calidad o base_tecnicos_inventario."""
+    if not comunidad:
+        return ""
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        placeholder = "%s" if engine == "mysql" else "?"
+        sql1 = f"SELECT area FROM visitas_calidad WHERE LOWER(comunidad) = LOWER({placeholder}) AND area IS NOT NULL AND area != '' LIMIT 1"
+        cur.execute(sql1, (comunidad,))
+        r1 = cur.fetchone()
+        if r1:
+            return r1['area'] if engine == "mysql" else r1[0]
+        sql2 = f"SELECT area FROM base_tecnicos_inventario WHERE LOWER(comunidad) = LOWER({placeholder}) AND area IS NOT NULL AND area != '' LIMIT 1"
+        cur.execute(sql2, (comunidad,))
+        r2 = cur.fetchone()
+        if r2:
+            return r2['area'] if engine == "mysql" else r2[0]
+        return ""
+    except Exception:
+        return ""
+    finally:
+        conn.close()
+
+def upsert_tecnico_inventario(cedula_or_dict, nombre_tecnico="", aliado="", region="", area="", comunidad=""):
+    """Actualiza o inserta los datos corregidos del técnico en base_tecnicos_inventario."""
+    if isinstance(cedula_or_dict, dict):
+        d = cedula_or_dict
+        cedula = d.get("cedula") or d.get("cedula_tecnico")
+        nombre_tecnico = d.get("nombre_tecnico", "")
+        aliado = d.get("aliado", "")
+        region = d.get("region", "")
+        area = d.get("area", "")
+        comunidad = d.get("comunidad", "")
+    else:
+        cedula = cedula_or_dict
+
+    try:
+        cedula_int = int(str(cedula).strip())
+    except Exception:
+        return False
+
+    if aliado == "CICSA COLOMBIA S.A.":
+        aliado = "TABASCO OC, LLC. SUCURSAL COLOMBIA"
+    if comunidad and not area:
+        area = get_area_por_ciudad(comunidad, region)
+
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        placeholder = "%s" if engine == "mysql" else "?"
+        cur.execute(f"SELECT id FROM base_tecnicos_inventario WHERE cedula = {placeholder}", (cedula_int,))
+        exists = cur.fetchone()
+        if exists:
+            sql = f"""
+                UPDATE base_tecnicos_inventario
+                SET nombre_tecnico = {placeholder},
+                    aliado = {placeholder},
+                    region = {placeholder},
+                    area = {placeholder},
+                    comunidad = {placeholder}
+                WHERE cedula = {placeholder}
+            """
+            cur.execute(sql, (nombre_tecnico, aliado, region, area, comunidad, cedula_int))
+        else:
+            sql = f"""
+                INSERT INTO base_tecnicos_inventario (cedula, nombre_tecnico, aliado, region, area, comunidad)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """
+            cur.execute(sql, (cedula_int, nombre_tecnico, aliado, region, area, comunidad))
+        if engine == "sqlite":
+            conn.commit()
+        return True
+    finally:
+        conn.close()
+
+def get_aliados_inventario(region=None):
+    """
+    Obtiene la lista unificada de Aliados conocidos en la BD (excluyendo solo DTH),
+    para permitir corregir o actualizar el Aliado de un técnico.
+    """
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        placeholder = "%s" if engine == "mysql" else "?"
+        aliados_set = set()
+        if region:
+            cur.execute(f"SELECT DISTINCT aliado FROM visitas_calidad WHERE region = {placeholder} AND red != 'DTH' AND aliado IS NOT NULL AND aliado != ''", (region,))
+            for r in cur.fetchall():
+                val = (r['aliado'] if engine == "mysql" else r[0]).strip()
+                if val:
+                    aliados_set.add(val)
+        cur.execute("SELECT DISTINCT aliado FROM visitas_calidad WHERE red != 'DTH' AND aliado IS NOT NULL AND aliado != ''")
+        for r in cur.fetchall():
+            val = (r['aliado'] if engine == "mysql" else r[0]).strip()
+            if val:
+                aliados_set.add(val)
+
+        if not aliados_set:
+            aliados_set = {
+                "CINCO S.A.S.", "CLARO COLOMBIA", "CONECTAR TV S.A.S.",
+                "DICO TELECOMUNICACIONES S.A.", "DOMINION", "INMEL INGENIERIA",
+                "LPS INGENIERIA SAS", "SICTE LTDA",
+                "TABASCO OC, LLC. SUCURSAL COLOMBIA", "TELCOS INGENIERIA S.A."
+            }
+
+        res = sorted(list(aliados_set))
+        return res
+    finally:
+        conn.close()
+
+def get_ciudades_inventario(region=None):
+    """
+    Obtiene todas las ciudades (comunidades) conocidas en la BD para la región seleccionada,
+    combinando el histórico de visitas_calidad/hallazgos_respuestas (sin solo DTH) y base_tecnicos_inventario.
+    """
+    ciudades_base = get_comunidades(region) if region else []
+    ciudades_map = {c.upper(): c for c in ciudades_base if c}
+
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        placeholder = "%s" if engine == "mysql" else "?"
+        if region:
+            cur.execute(f"SELECT DISTINCT comunidad FROM base_tecnicos_inventario WHERE region = {placeholder} AND comunidad IS NOT NULL AND comunidad != ''", (region,))
+        else:
+            cur.execute("SELECT DISTINCT comunidad FROM base_tecnicos_inventario WHERE comunidad IS NOT NULL AND comunidad != ''")
+        for r in cur.fetchall():
+            val = _format_inv_ciudad(r['comunidad'] if engine == "mysql" else r[0])
+            if val and val.upper() not in ciudades_map:
+                ciudades_map[val.upper()] = val
+    finally:
+        conn.close()
+
+    return sorted(list(ciudades_map.values()))
+
+def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
+    """
+    Guarda la auditoría completa de inventario de herramientas en inventarios_herramientas
+    y sus 10 ítems en inventarios_herramientas_detalle.
+    Retorna un diccionario con codigo_auditoria y conteos.
+    """
+    if lista_herramientas is None:
+        lista_herramientas = datos_cabecera.get('items', [])
+
+    fecha_col = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=5))
+    fecha_str = fecha_col.strftime('%Y-%m-%d %H:%M:%S')
+    ymd = fecha_col.strftime('%Y%m%d')
+
+    # Calcular conteos automáticamente a partir de lista_herramientas
+    total_herramientas = len(lista_herramientas) if lista_herramientas else int(datos_cabecera.get('total_herramientas', 10))
+    ok_count = 0
+    nov_count = 0
+    falt_count = 0
+    evidencias_count = 1 if datos_cabecera.get('foto_general_path') else 0
+    lineas_nov = []
+
+    for item in lista_herramientas:
+        st = (item.get('estado') or 'OK').upper()
+        f_path = item.get('foto_path') or item.get('evidencia_path') or ''
+        if f_path:
+            evidencias_count += 1
+        if st == 'OK':
+            ok_count += 1
+        elif st == 'NOVEDAD':
+            nov_count += 1
+            lineas_nov.append(f"{item.get('herramienta')}: {item.get('novedad')}")
+        elif st == 'FALTANTE':
+            falt_count += 1
+            lineas_nov.append(f"{item.get('herramienta')}: no disponible")
+
+    resumen_novedades = " | ".join(lineas_nov) if lineas_nov else "Sin novedades"
+
+    # Actualizar datos del técnico en base_tecnicos_inventario si fueron completados/corregidos
+    upsert_tecnico_inventario({
+        'cedula': datos_cabecera.get('cedula_tecnico'),
+        'nombre_tecnico': datos_cabecera.get('nombre_tecnico', ''),
+        'aliado': datos_cabecera.get('aliado', ''),
+        'region': datos_cabecera.get('region', ''),
+        'area': datos_cabecera.get('area', ''),
+        'comunidad': datos_cabecera.get('comunidad', '')
+    })
+
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COALESCE(MAX(id), 0) as max_id FROM inventarios_herramientas")
+        r_max = cur.fetchone()
+        next_seq = (r_max['max_id'] if engine == "mysql" else r_max[0]) + 1
+        codigo_auditoria = f"INV-{ymd}-{next_seq:04d}"
+
+        placeholder = "%s" if engine == "mysql" else "?"
+        while True:
+            cur.execute(f"SELECT id FROM inventarios_herramientas WHERE codigo_auditoria = {placeholder}", (codigo_auditoria,))
+            if not cur.fetchone():
+                break
+            next_seq += 1
+            codigo_auditoria = f"INV-{ymd}-{next_seq:04d}"
+
+        cols = [
+            'codigo_auditoria', 'fecha_registro', 'telegram_user_id', 'telegram_username',
+            'telegram_nombre', 'cedula_tecnico', 'nombre_tecnico', 'aliado', 'region',
+            'area', 'comunidad', 'total_herramientas', 'herramientas_ok',
+            'herramientas_novedad', 'herramientas_faltantes', 'total_evidencias',
+            'foto_general_path', 'resumen_novedades', 'observaciones'
+        ]
+        vals = [
+            codigo_auditoria,
+            fecha_str,
+            datos_cabecera.get('telegram_user_id'),
+            datos_cabecera.get('telegram_username', ''),
+            datos_cabecera.get('telegram_nombre', ''),
+            int(datos_cabecera.get('cedula_tecnico') or 0),
+            datos_cabecera.get('nombre_tecnico', ''),
+            datos_cabecera.get('aliado', ''),
+            datos_cabecera.get('region', ''),
+            datos_cabecera.get('area', ''),
+            datos_cabecera.get('comunidad', ''),
+            total_herramientas,
+            ok_count,
+            nov_count,
+            falt_count,
+            evidencias_count,
+            datos_cabecera.get('foto_general_path') or '',
+            resumen_novedades,
+            datos_cabecera.get('observaciones', '')
+        ]
+
+        if engine == "mysql":
+            placeholders = ", ".join(["%s"] * len(cols))
+            col_names = ", ".join([f"`{c}`" for c in cols])
+            sql_hdr = f"INSERT INTO inventarios_herramientas ({col_names}) VALUES ({placeholders})"
+            cur.execute(sql_hdr, vals)
+            inv_id = cur.lastrowid
+
+            sql_det = """
+                INSERT INTO inventarios_herramientas_detalle
+                (inventario_id, codigo_auditoria, herramienta, estado, novedad, evidencia_path)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            det_rows = [
+                (
+                    inv_id,
+                    codigo_auditoria,
+                    item.get('herramienta', ''),
+                    item.get('estado', 'OK'),
+                    item.get('novedad') or 'N/A',
+                    item.get('foto_path') or item.get('evidencia_path') or ''
+                )
+                for item in lista_herramientas
+            ]
+            if det_rows:
+                cur.executemany(sql_det, det_rows)
+        else:
+            with conn:
+                placeholders = ", ".join(["?"] * len(cols))
+                col_names = ", ".join(cols)
+                sql_hdr = f"INSERT INTO inventarios_herramientas ({col_names}) VALUES ({placeholders})"
+                cur.execute(sql_hdr, vals)
+                inv_id = cur.lastrowid
+
+                sql_det = """
+                    INSERT INTO inventarios_herramientas_detalle
+                    (inventario_id, codigo_auditoria, herramienta, estado, novedad, evidencia_path)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """
+                det_rows = [
+                    (
+                        inv_id,
+                        codigo_auditoria,
+                        item.get('herramienta', ''),
+                        item.get('estado', 'OK'),
+                        item.get('novedad') or 'N/A',
+                        item.get('foto_path') or item.get('evidencia_path') or ''
+                    )
+                    for item in lista_herramientas
+                ]
+                if det_rows:
+                    cur.executemany(sql_det, det_rows)
+
+        print(f"[DB] Inventario guardado: {codigo_auditoria} (ID #{inv_id}) - Técnico {datos_cabecera.get('cedula_tecnico')}")
+        return {
+            'id': inv_id,
+            'codigo_auditoria': codigo_auditoria,
+            'total_herramientas': total_herramientas,
+            'herramientas_ok': ok_count,
+            'herramientas_novedad': nov_count,
+            'herramientas_faltantes': falt_count,
+            'evidencias_cargadas': evidencias_count
+        }
+    finally:
+        conn.close()
+
+def get_inventarios_herramientas(limit=200):
+    """Retorna la lista de auditorías de inventario más recientes incluyendo su lista de detalles."""
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT * FROM inventarios_herramientas ORDER BY id DESC LIMIT {int(limit)}")
+        rows = [dict(r) for r in cur.fetchall()]
+        if not rows:
+            return []
+
+        placeholder = "%s" if engine == "mysql" else "?"
+        for r in rows:
+            cur.execute(
+                f"SELECT herramienta, estado, novedad, evidencia_path FROM inventarios_herramientas_detalle WHERE inventario_id = {placeholder} ORDER BY id ASC",
+                (r['id'],)
+            )
+            dets = []
+            for d in cur.fetchall():
+                dd = dict(d)
+                dd['foto_path'] = dd.get('evidencia_path') or ''
+                dets.append(dd)
+            r['detalles'] = dets
+        return rows
+    finally:
+        conn.close()
+
+def get_inventarios_detalle_export(limit=10000):
+    """Retorna el cruce de inventarios con su detalle por herramienta para exportar a Excel."""
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        sql = f"""
+            SELECT 
+                i.codigo_auditoria,
+                i.fecha_registro,
+                i.cedula_tecnico,
+                i.nombre_tecnico,
+                i.aliado,
+                i.region,
+                i.area,
+                i.comunidad,
+                d.herramienta,
+                d.estado,
+                d.novedad,
+                d.evidencia_path,
+                i.foto_general_path,
+                i.telegram_nombre as supervisor,
+                i.telegram_username
+            FROM inventarios_herramientas i
+            LEFT JOIN inventarios_herramientas_detalle d ON i.id = d.inventario_id
+            ORDER BY i.id DESC, d.id ASC
+            LIMIT {int(limit)}
+        """
+        cur.execute(sql)
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+def get_estadisticas_inventario():
+    """Retorna KPIs y series para las gráficas de la Pestaña de Inventario de Herramientas."""
+    conn, engine = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) as cnt FROM base_tecnicos_inventario")
+        r_tec = cur.fetchone()
+        total_tecnicos_base = r_tec['cnt'] if engine == "mysql" else r_tec[0]
+
+        cur.execute("SELECT COUNT(*) as cnt FROM inventarios_herramientas")
+        r_inv = cur.fetchone()
+        total_inventarios = r_inv['cnt'] if engine == "mysql" else r_inv[0]
+
+        stats = {
+            'total_tecnicos_base': total_tecnicos_base,
+            'total_inventarios': total_inventarios,
+            'total_herramientas_eval': 0,
+            'total_ok': 0,
+            'total_novedad': 0,
+            'total_faltante': 0,
+            'total_faltantes': 0,
+            'total_evidencias': 0,
+            'pct_ok': 0.0,
+            'estado_labels': ['Herramientas OK', 'Con Novedad', 'Faltantes'],
+            'estado_values': [0, 0, 0],
+            'novedades_labels': ['No funciona', 'Funciona parcialmente', 'Deterioro físico', 'Falta accesorio'],
+            'novedades_values': [0, 0, 0, 0],
+            'top_tools_labels': [],
+            'top_tools_values': [],
+            'herramientas_nov_labels': [],
+            'herramientas_nov_values': [],
+            'regiones_labels': [],
+            'regiones_values': [],
+            'aliados_labels': [],
+            'aliados_values': []
+        }
+
+        if total_inventarios == 0:
+            return stats
+
+        cur.execute("""
+            SELECT 
+                COALESCE(SUM(herramientas_ok), 0) as sum_ok,
+                COALESCE(SUM(herramientas_novedad), 0) as sum_nov,
+                COALESCE(SUM(herramientas_faltantes), 0) as sum_fal,
+                COALESCE(SUM(total_evidencias), 0) as sum_evi,
+                COALESCE(SUM(total_herramientas), 0) as sum_tot
+            FROM inventarios_herramientas
+        """)
+        row_sums = cur.fetchone()
+        if engine == "mysql":
+            sum_ok = int(row_sums['sum_ok'])
+            sum_nov = int(row_sums['sum_nov'])
+            sum_fal = int(row_sums['sum_fal'])
+            sum_evi = int(row_sums['sum_evi'])
+            sum_tot = int(row_sums['sum_tot'])
+        else:
+            sum_ok, sum_nov, sum_fal, sum_evi, sum_tot = [int(x or 0) for x in row_sums]
+
+        stats['total_herramientas_eval'] = sum_tot
+        stats['total_ok'] = sum_ok
+        stats['total_novedad'] = sum_nov
+        stats['total_faltante'] = sum_fal
+        stats['total_faltantes'] = sum_fal
+        stats['total_evidencias'] = sum_evi
+        stats['pct_ok'] = round((sum_ok / sum_tot) * 100, 1) if sum_tot > 0 else 0.0
+        stats['estado_values'] = [sum_ok, sum_nov, sum_fal]
+
+        def fetch_counts(query):
+            cur.execute(query)
+            if engine == "mysql":
+                return [(r['label'] or 'Sin datos', int(r['cnt'])) for r in cur.fetchall()]
+            return [(r[0] or 'Sin datos', int(r[1])) for r in cur.fetchall()]
+
+        # Por Tipo de Novedad
+        novs = fetch_counts("""
+            SELECT novedad as label, COUNT(*) as cnt 
+            FROM inventarios_herramientas_detalle 
+            WHERE estado = 'NOVEDAD' AND novedad IS NOT NULL AND novedad != '' AND novedad != 'N/A'
+            GROUP BY novedad ORDER BY cnt DESC
+        """)
+        if novs:
+            stats['novedades_labels'] = [n[0] for n in novs]
+            stats['novedades_values'] = [n[1] for n in novs]
+
+        # Herramientas con más novedades / faltantes
+        herr_nov = fetch_counts("""
+            SELECT herramienta as label, COUNT(*) as cnt 
+            FROM inventarios_herramientas_detalle 
+            WHERE estado != 'OK'
+            GROUP BY herramienta ORDER BY cnt DESC LIMIT 10
+        """)
+        stats['top_tools_labels'] = [h[0] for h in herr_nov]
+        stats['top_tools_values'] = [h[1] for h in herr_nov]
+        stats['herramientas_nov_labels'] = stats['top_tools_labels']
+        stats['herramientas_nov_values'] = stats['top_tools_values']
+
+        # Por Región
+        regs = fetch_counts("""
+            SELECT region as label, COUNT(*) as cnt 
+            FROM inventarios_herramientas 
+            WHERE region IS NOT NULL AND region != ''
+            GROUP BY region ORDER BY cnt DESC
+        """)
+        stats['regiones_labels'] = [r[0] for r in regs]
+        stats['regiones_values'] = [r[1] for r in regs]
+
+        # Por Aliado
+        alis = fetch_counts("""
+            SELECT aliado as label, COUNT(*) as cnt 
+            FROM inventarios_herramientas 
+            WHERE aliado IS NOT NULL AND aliado != ''
+            GROUP BY aliado ORDER BY cnt DESC LIMIT 8
+        """)
+        stats['aliados_labels'] = [a[0] for a in alis]
+        stats['aliados_values'] = [a[1] for a in alis]
+
+        return stats
+    finally:
+        conn.close()
+
 
