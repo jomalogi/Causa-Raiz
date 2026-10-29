@@ -1518,6 +1518,8 @@ def get_inventario_mes_actual(cedula, mes=None):
         return None
     try:
         cedula_int = int(str(cedula).strip())
+        if cedula_int <= 0:
+            return None
     except ValueError:
         return None
 
@@ -1798,6 +1800,15 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
     total_herramientas = len(lista_herramientas) if lista_herramientas else int(datos_cabecera.get('total_herramientas', 10))
     resumen_novedades = " | ".join(lineas_nov) if lineas_nov else "Sin novedades"
 
+    # Si hay cédula y algún campo territorial/nombre viene vacío, enriquecer desde base_tecnicos_inventario
+    ced_val = datos_cabecera.get('cedula_tecnico')
+    if ced_val and str(ced_val).strip() not in ('', '0'):
+        tec_db = get_tecnico_by_cedula(ced_val)
+        if tec_db:
+            for k in ('nombre_tecnico', 'aliado', 'region', 'area', 'comunidad'):
+                if not (datos_cabecera.get(k) or '').strip() and (tec_db.get(k) or '').strip():
+                    datos_cabecera[k] = tec_db[k].strip()
+
     # Actualizar datos del técnico en base_tecnicos_inventario si fueron completados/corregidos
     upsert_tecnico_inventario({
         'cedula': datos_cabecera.get('cedula_tecnico'),
@@ -1811,12 +1822,29 @@ def guardar_inventario_herramientas(datos_cabecera, lista_herramientas=None):
     conn, engine = get_connection()
     try:
         cur = conn.cursor()
+        placeholder = "%s" if engine == "mysql" else "?"
+
+        # Fallback de región por historial del supervisor si aún viniera vacía
+        if not (datos_cabecera.get('region') or '').strip() and datos_cabecera.get('telegram_user_id'):
+            cur.execute(
+                f"SELECT region, area, comunidad, aliado FROM inventarios_herramientas WHERE telegram_user_id = {placeholder} AND region IS NOT NULL AND region != '' ORDER BY id DESC LIMIT 1",
+                (datos_cabecera.get('telegram_user_id'),)
+            )
+            r_sup = cur.fetchone()
+            if r_sup:
+                r_sup_d = dict(r_sup)
+                datos_cabecera['region'] = r_sup_d.get('region') or ''
+                if not (datos_cabecera.get('area') or '').strip():
+                    datos_cabecera['area'] = r_sup_d.get('area') or ''
+                if not (datos_cabecera.get('comunidad') or '').strip():
+                    datos_cabecera['comunidad'] = r_sup_d.get('comunidad') or ''
+                if not (datos_cabecera.get('aliado') or '').strip():
+                    datos_cabecera['aliado'] = r_sup_d.get('aliado') or ''
+
         cur.execute("SELECT COALESCE(MAX(id), 0) as max_id FROM inventarios_herramientas")
         r_max = cur.fetchone()
         next_seq = (r_max['max_id'] if engine == "mysql" else r_max[0]) + 1
         codigo_auditoria = f"INV-{ymd}-{next_seq:04d}"
-
-        placeholder = "%s" if engine == "mysql" else "?"
         while True:
             cur.execute(f"SELECT id FROM inventarios_herramientas WHERE codigo_auditoria = {placeholder}", (codigo_auditoria,))
             if not cur.fetchone():
@@ -1958,7 +1986,7 @@ def get_inventarios_herramientas(limit=500, region=None, aliado=None, comunidad=
         except Exception:
             pass
 
-        where_clauses = []
+        where_clauses = ["cedula_tecnico IS NOT NULL AND cedula_tecnico > 0"]
         params = []
         if region:
             where_clauses.append(f"region = {placeholder}")
@@ -2029,7 +2057,7 @@ def get_inventarios_detalle_export(limit=20000, region=None, aliado=None, comuni
     try:
         cur = conn.cursor()
         placeholder = "%s" if engine == "mysql" else "?"
-        where_clauses = []
+        where_clauses = ["i.cedula_tecnico IS NOT NULL AND i.cedula_tecnico > 0"]
         params = []
         if region:
             where_clauses.append(f"i.region = {placeholder}")
@@ -2090,7 +2118,9 @@ def get_estadisticas_inventario():
         r_tec = cur.fetchone()
         total_tecnicos_base = r_tec['cnt'] if engine == "mysql" else r_tec[0]
 
-        cur.execute("SELECT COUNT(*) as cnt FROM inventarios_herramientas")
+        latest_ids_sql = "(SELECT max_id FROM (SELECT MAX(id) as max_id FROM inventarios_herramientas WHERE cedula_tecnico IS NOT NULL AND cedula_tecnico > 0 GROUP BY cedula_tecnico) AS ult)"
+
+        cur.execute(f"SELECT COUNT(*) as cnt FROM inventarios_herramientas WHERE id IN {latest_ids_sql}")
         r_inv = cur.fetchone()
         total_inventarios = r_inv['cnt'] if engine == "mysql" else r_inv[0]
 
@@ -2221,7 +2251,7 @@ def get_estadisticas_inventario():
         if total_inventarios == 0:
             return stats
 
-        cur.execute("""
+        cur.execute(f"""
             SELECT 
                 COALESCE(SUM(herramientas_ok), 0) as sum_ok,
                 COALESCE(SUM(herramientas_novedad), 0) as sum_nov,
@@ -2229,6 +2259,7 @@ def get_estadisticas_inventario():
                 COALESCE(SUM(total_evidencias), 0) as sum_evi,
                 COALESCE(SUM(total_herramientas), 0) as sum_tot
             FROM inventarios_herramientas
+            WHERE id IN {latest_ids_sql}
         """)
         row_sums = cur.fetchone()
         if engine == "mysql":
@@ -2251,9 +2282,10 @@ def get_estadisticas_inventario():
         stats['estado_values'] = [sum_ok, sum_nov, sum_fal]
 
         # Cumplimiento y Propiedad detallados por cada una de las 10 herramientas
-        cur.execute("""
+        cur.execute(f"""
             SELECT herramienta, estado, COALESCE(propiedad, '') as propiedad, COUNT(*) as cnt
             FROM inventarios_herramientas_detalle
+            WHERE inventario_id IN {latest_ids_sql}
             GROUP BY herramienta, estado, propiedad
         """)
         tool_map = {t: {'OK': 0, 'NOVEDAD': 0, 'FALTANTE': 0, 'TECNICO': 0, 'ALIADO': 0} for t in HERRAMIENTAS_OFICIALES}
@@ -2311,10 +2343,11 @@ def get_estadisticas_inventario():
             return [(r[0] or 'Sin datos', int(r[1])) for r in cur.fetchall()]
 
         # Por Tipo de Novedad
-        novs = fetch_counts("""
+        novs = fetch_counts(f"""
             SELECT novedad as label, COUNT(*) as cnt 
             FROM inventarios_herramientas_detalle 
-            WHERE estado = 'NOVEDAD' AND novedad IS NOT NULL AND novedad != '' AND novedad != 'N/A'
+            WHERE inventario_id IN {latest_ids_sql}
+              AND estado = 'NOVEDAD' AND novedad IS NOT NULL AND novedad != '' AND novedad != 'N/A'
             GROUP BY novedad ORDER BY cnt DESC
         """)
         if novs:
@@ -2322,10 +2355,11 @@ def get_estadisticas_inventario():
             stats['novedades_values'] = [n[1] for n in novs]
 
         # Herramientas con más novedades / faltantes
-        herr_nov = fetch_counts("""
+        herr_nov = fetch_counts(f"""
             SELECT herramienta as label, COUNT(*) as cnt 
             FROM inventarios_herramientas_detalle 
-            WHERE estado != 'OK'
+            WHERE inventario_id IN {latest_ids_sql}
+              AND estado != 'OK'
             GROUP BY herramienta ORDER BY cnt DESC LIMIT 10
         """)
         stats['top_tools_labels'] = [h[0] for h in herr_nov]
@@ -2334,29 +2368,32 @@ def get_estadisticas_inventario():
         stats['herramientas_nov_values'] = stats['top_tools_values']
 
         # Por Región
-        regs = fetch_counts("""
+        regs = fetch_counts(f"""
             SELECT region as label, COUNT(*) as cnt 
             FROM inventarios_herramientas 
-            WHERE region IS NOT NULL AND region != ''
+            WHERE id IN {latest_ids_sql}
+              AND region IS NOT NULL AND region != ''
             GROUP BY region ORDER BY cnt DESC
         """)
         stats['regiones_labels'] = [r[0] for r in regs]
         stats['regiones_values'] = [r[1] for r in regs]
 
         # Por Zona (Area)
-        zons = fetch_counts("""
+        zons = fetch_counts(f"""
             SELECT COALESCE(NULLIF(area, ''), 'Sin Zona') as label, COUNT(*) as cnt 
             FROM inventarios_herramientas 
+            WHERE id IN {latest_ids_sql}
             GROUP BY label ORDER BY cnt DESC LIMIT 10
         """)
         stats['zonas_labels'] = [z[0] for z in zons]
         stats['zonas_values'] = [z[1] for z in zons]
 
         # Por Aliado
-        alis = fetch_counts("""
+        alis = fetch_counts(f"""
             SELECT aliado as label, COUNT(*) as cnt 
             FROM inventarios_herramientas 
-            WHERE aliado IS NOT NULL AND aliado != ''
+            WHERE id IN {latest_ids_sql}
+              AND aliado IS NOT NULL AND aliado != ''
             GROUP BY aliado ORDER BY cnt DESC LIMIT 10
         """)
         stats['aliados_labels'] = [a[0] for a in alis]

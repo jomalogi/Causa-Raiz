@@ -61,6 +61,7 @@ NOVEDADES_HERRAMIENTAS = [
 # Diccionario para almacenar el estado de la conversación por usuario
 # chat_id -> dict
 USER_SESSIONS = {}
+SESSIONS_CACHE_FILE = Path(__file__).resolve().parent / "sessions_cache.json"
 
 def _default_session():
     return {
@@ -111,6 +112,44 @@ def _default_session():
         'page_inv_ali': 0,
         'page_inv_ciu': 0
     }
+
+def _save_sessions_to_disk():
+    try:
+        tmp_path = SESSIONS_CACHE_FILE.with_suffix(".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(USER_SESSIONS, f, ensure_ascii=False, default=str)
+        tmp_path.replace(SESSIONS_CACHE_FILE)
+    except Exception as e:
+        logger.warning(f"No se pudo guardar sessions_cache.json: {e}")
+
+def _load_sessions_from_disk():
+    global USER_SESSIONS
+    if not SESSIONS_CACHE_FILE.exists():
+        return
+    try:
+        with open(SESSIONS_CACHE_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        if isinstance(raw, dict):
+            for k, v in raw.items():
+                try:
+                    cid = int(k)
+                except ValueError:
+                    continue
+                if isinstance(v, dict):
+                    sess = _default_session()
+                    sess.update(v)
+                    if isinstance(sess.get('inv_items'), dict):
+                        fixed_items = {}
+                        for ik, iv in sess['inv_items'].items():
+                            try:
+                                fixed_items[int(ik)] = iv
+                            except ValueError:
+                                fixed_items[ik] = iv
+                        sess['inv_items'] = fixed_items
+                    USER_SESSIONS[cid] = sess
+        logger.info(f"Sesiones restauradas desde disco: {len(USER_SESSIONS)} activas.")
+    except Exception as e:
+        logger.warning(f"No se pudo cargar sessions_cache.json: {e}")
 
 def get_session(chat_id):
     if chat_id not in USER_SESSIONS:
@@ -871,7 +910,22 @@ def view_inv_menu_corregir(chat_id, message_id=None):
 def view_inv_confirmar_guardar(chat_id, from_user, message_id=None):
     """Guarda o actualiza el inventario en la BD, genera/mantiene el código de auditoría y muestra el mensaje final."""
     session = get_session(chat_id)
+    if session.get('step') == 'INV_DONE':
+        return
     tec = session.get('inv_tecnico') or {}
+    ced_digits = re.sub(r"\D", "", str(tec.get('cedula') or ''))
+    if not ced_digits or int(ced_digits) <= 0:
+        session['step'] = 'INV_CEDULA_RECOVERY'
+        texto = (
+            "⚠️ *Se requiere la Cédula del Técnico para guardar*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Tus herramientas evaluadas y evidencias fotográficas están guardadas en memoria, "
+            "pero falta asociar el número de cédula del técnico.\n\n"
+            "🪪 Por favor digita y envía el *Número de Cédula* del técnico para finalizar el registro:"
+        )
+        edit_message(chat_id, message_id, texto, {"inline_keyboard": [[{"text": "🏠 Menú Principal", "callback_data": "nav:restart"}]]})
+        return
+
     items_dict = session.get('inv_items') or {}
 
     items_list = []
@@ -1934,6 +1988,10 @@ def handle_callback(update):
         return
 
     if data in ("inv_act:start_tools", "inv_act:start_tools_new"):
+        tec_chk = session.get('inv_tecnico') or {}
+        if not tec_chk.get('cedula'):
+            view_inv_pedir_cedula(chat_id, message_id)
+            return
         session['inv_update_id'] = None
         session['inv_update_codigo'] = None
         session['inv_items'] = {}
@@ -2341,7 +2399,7 @@ def handle_message(update):
     # ---------------------------------------------------------
     # Mensajes y Fotos del Módulo: Inventario de Herramientas
     # ---------------------------------------------------------
-    if step == 'INV_CEDULA':
+    if step in ('INV_CEDULA', 'INV_CEDULA_RECOVERY'):
         digits = re.sub(r"\D", "", text)
         if not digits:
             send_message(
@@ -2367,11 +2425,62 @@ def handle_message(update):
                 'en_base': False
             }
         session['inv_tecnico'] = tec
+        if step == 'INV_CEDULA_RECOVERY':
+            datos_ok = not (
+                _is_missing_val(tec.get('nombre_tecnico')) or
+                _is_missing_val(tec.get('aliado')) or
+                _is_missing_val(tec.get('region')) or
+                _is_missing_val(tec.get('comunidad'))
+            )
+            if datos_ok:
+                view_inv_resumen(chat_id)
+            else:
+                session['inv_editing_from_summary'] = True
+                view_inv_ficha_tecnico(chat_id)
+            return
+
         session['inv_mes_existente'] = db.get_inventario_mes_actual(digits)
         session['inv_update_id'] = None
         session['inv_update_codigo'] = None
         view_inv_ficha_tecnico(chat_id)
         return
+
+    if step == 'INV_FICHA_TECNICO':
+        digits = re.sub(r"\D", "", text)
+        tec_cur = session.get('inv_tecnico') or {}
+        if len(digits) >= 5:
+            tec = db.get_tecnico_by_cedula(digits)
+            if tec:
+                tec['en_base'] = True
+                if _is_missing_val(tec.get('region')) and session.get('region'):
+                    tec['region'] = session['region']
+            else:
+                tec = {
+                    'cedula': digits,
+                    'nombre_tecnico': '',
+                    'aliado': '',
+                    'region': session.get('region') or '',
+                    'comunidad': '',
+                    'area': '',
+                    'en_base': False
+                }
+            session['inv_tecnico'] = tec
+            session['inv_mes_existente'] = db.get_inventario_mes_actual(digits)
+            session['inv_update_id'] = None
+            session['inv_update_codigo'] = None
+            view_inv_ficha_tecnico(chat_id)
+            return
+        elif text and not digits and len(text.strip()) >= 3 and _is_missing_val(tec_cur.get('nombre_tecnico')):
+            tec_cur['nombre_tecnico'] = text.strip().upper()
+            session['inv_tecnico'] = tec_cur
+            if tec_cur.get('cedula'):
+                db.upsert_tecnico_inventario(tec_cur)
+                tec_cur['en_base'] = True
+            view_inv_ficha_tecnico(chat_id)
+            return
+        else:
+            view_inv_ficha_tecnico(chat_id)
+            return
 
     if step == 'INV_NOMBRE':
         nombre_clean = text.strip().upper()
@@ -2445,6 +2554,17 @@ def handle_message(update):
         view_inv_resumen(chat_id)
         return
 
+    # Evitar reiniciar la sesión si el usuario envía fotos adicionales (ej. álbum) o texto durante el inventario
+    if step and str(step).startswith('INV_') and step != 'INV_DONE':
+        if file_id_foto:
+            # Si envía una segunda foto en álbum tras haber pasado a INV_RESUMEN o siguiente herramienta, ignorar sin borrar sesión
+            return
+        send_message(
+            chat_id,
+            "ℹ️ Por favor utiliza los *botones en pantalla* para continuar con el inventario (o escribe `/inicio` si deseas reiniciar)."
+        )
+        return
+
     # Si está en el paso de ingresar OT manual
     if step == 'MANUAL_OT':
         digits = re.sub(r"\D", "", text)
@@ -2497,6 +2617,7 @@ def handle_message(update):
 def poll_updates():
     """Bucle principal de Long Polling para escuchar eventos de Telegram."""
     last_update_id = 0
+    _load_sessions_from_disk()
     logger.info(f"Iniciando Bot de Telegram con token: {TELEGRAM_TOKEN[:10]}... (Poller activo)")
     
     # Verificar información del Bot
@@ -2521,8 +2642,10 @@ def poll_updates():
                         last_update_id = update["update_id"]
                         if "callback_query" in update:
                             handle_callback(update)
+                            _save_sessions_to_disk()
                         elif "message" in update:
                             handle_message(update)
+                            _save_sessions_to_disk()
             else:
                 logger.warning(f"Respuesta inesperada de Telegram: {resp.status_code}")
                 time.sleep(2)

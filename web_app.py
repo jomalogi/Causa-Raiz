@@ -895,6 +895,7 @@ HTML_TEMPLATE = """
                                     {% if inventarios %}
                                         {% for inv in inventarios %}
                                             <tr class="fila-inventario"
+                                                data-cedula="{{ inv.cedula_tecnico or inv.id }}"
                                                 data-mes="{{ inv.mes_registro or (inv.fecha_registro or '')[:7] }}"
                                                 data-region="{{ inv.region or '' }}"
                                                 data-zona="{{ inv.area or '' }}"
@@ -1674,8 +1675,8 @@ HTML_TEMPLATE = """
             }
             document.getElementById('kpiInvTecnicosBase').textContent = totalTecnicosFiltrados.toLocaleString('es-CO');
 
-            // 2. Filtrar registros de inventario (incluyendo Mes)
-            const invFiltrados = rawInventarios.filter(inv => {
+            // 2. Filtrar registros de inventario (incluyendo Mes) y tomar solo la última auditoría por técnico
+            const invFiltradosRaw = rawInventarios.filter(inv => {
                 const invMes = String(inv.mes_registro || inv.fecha_registro || '').slice(0, 7);
                 return (!mes || invMes === mes)
                     && (!region || eqIgnoreCase(inv.region, region))
@@ -1684,9 +1685,21 @@ HTML_TEMPLATE = """
                     && (!ciudad || eqIgnoreCase(inv.comunidad, ciudad));
             });
 
-            // 3. Recalcular KPIs y métricas por cada una de las 10 herramientas
+            const seenCedulas = new Set();
+            const invFiltrados = [];
+            invFiltradosRaw.forEach(inv => {
+                const cedNum = Number(inv.cedula_tecnico) || 0;
+                if (cedNum <= 0) return;
+                const key = String(cedNum);
+                if (!seenCedulas.has(key)) {
+                    seenCedulas.add(key);
+                    invFiltrados.push(inv);
+                }
+            });
+
+            // 3. Recalcular KPIs y métricas por cada una de las 10 herramientas (1 auditoría vigente por técnico)
             const totalInv = invFiltrados.length;
-            const tecnicosUnicos = new Set(invFiltrados.map(i => i.cedula_tecnico).filter(Boolean)).size;
+            const tecnicosUnicos = totalInv;
             const pctCobertura = totalTecnicosFiltrados > 0 ? ((tecnicosUnicos / totalTecnicosFiltrados) * 100).toFixed(1) : '0.0';
             let totalOk = 0, totalNov = 0, totalFalt = 0, totalEvid = 0;
             let totalPropTec = 0, totalPropAli = 0;
@@ -1831,14 +1844,21 @@ HTML_TEMPLATE = """
             chartsInv.aliados.data.datasets[0].data = grpAliados.values.slice(0, 10);
             chartsInv.aliados.update();
 
-            // Filtrar filas de la tabla de inventarios
+            // Filtrar filas de la tabla de inventarios (mostrando solo la última auditoría por técnico)
+            const seenTablaCedulas = new Set();
             document.querySelectorAll('.fila-inventario').forEach(tr => {
                 const match = (!mes || tr.dataset.mes === mes)
                            && (!region || eqIgnoreCase(tr.dataset.region, region))
                            && (!zona || eqIgnoreCase(tr.dataset.zona, zona))
                            && (!aliado || eqIgnoreCase(tr.dataset.aliado, aliado))
                            && (!ciudad || eqIgnoreCase(tr.dataset.ciudad, ciudad));
-                tr.style.display = match ? '' : 'none';
+                const cedKey = String(tr.dataset.cedula || '').trim();
+                let showRow = false;
+                if (match && (!cedKey || !seenTablaCedulas.has(cedKey))) {
+                    if (cedKey) seenTablaCedulas.add(cedKey);
+                    showRow = true;
+                }
+                tr.style.display = showRow ? '' : 'none';
             });
         }
 
@@ -2156,7 +2176,15 @@ def descargar_inventarios():
         return redirect(url_for("index"))
 
     resumen_rows = []
+    seen_cedulas = set()
+    codigos_vigentes = set()
     for inv in inventarios:
+        ced_key = str(inv.get('cedula_tecnico') or '').strip() or f"id_{inv.get('id')}"
+        if ced_key in seen_cedulas:
+            continue
+        seen_cedulas.add(ced_key)
+        if inv.get('codigo_auditoria'):
+            codigos_vigentes.add(inv['codigo_auditoria'])
         r = {k: v for k, v in inv.items() if k != 'detalles'}
         resumen_rows.append(r)
 
@@ -2168,6 +2196,8 @@ def descargar_inventarios():
         area=zona,
         mes=mes
     )
+    if codigos_vigentes:
+        detalles_rows = [d for d in detalles_rows if d.get('codigo_auditoria') in codigos_vigentes]
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
